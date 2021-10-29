@@ -17,7 +17,7 @@ pipeline {
       steps {
         sh '''
           ./gradlew downloadEmsdk installEmsdk activateEmsdk
-          ./gradlew :emccClean :giac-gwt:publish --no-daemon -Prevision=56100 --info --refresh-dependencies
+          ./gradlew :emccClean :giac-gwt:publish --no-daemon -Prevision=56101 --info --refresh-dependencies
           ./gradlew :updateGiac --no-daemon -Prevision=56100 --info'''
       }
     }
