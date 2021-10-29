@@ -17,20 +17,8 @@ pipeline {
       steps {
         sh '''
           ./gradlew downloadEmsdk installEmsdk activateEmsdk
-          ./gradlew :emccClean :giac-gwt:publish --no-daemon -Prevision=$SVN_REVISION --info --refresh-dependencies
-          ./gradlew :updateGiac --no-daemon -Prevision=$SVN_REVISION --info'''
-        node('mac') {
-          checkout([$class: 'SubversionSCM', 
-            locations: [[cancelProcessOnExternalsFail: true, 
-              credentialsId: 'svn', 
-              depthOption: 'infinity', 
-              ignoreExternalsOption: true, 
-              local: '.', 
-              remote: 'https://dev.geogebra.org/svn/trunk/geogebra/giac']], 
-            quietOperation: true, 
-            workspaceUpdater: [$class: 'UpdateUpdater']])
-          sh './gradlew clean publishPodspec -Prevision=$SVN_REVISION'
-        }
+          ./gradlew :emccClean :giac-gwt:publish --no-daemon -Prevision=56100 --info --refresh-dependencies
+          ./gradlew :updateGiac --no-daemon -Prevision=56100 --info'''
       }
     }
   }
