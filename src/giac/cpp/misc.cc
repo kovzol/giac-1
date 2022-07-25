@@ -2281,7 +2281,10 @@ namespace giac {
 
   gen _charpoly(const gen & args,GIAC_CONTEXT){
     string s;
-    if (is_graphe(args.subtype==_SEQ__VECT?args._VECTptr->front():args,s,contextptr))
+    gen arg0=args.type==_VECT && !args._VECTptr->empty() && args.subtype==_SEQ__VECT?args._VECTptr->front():args;
+    if (ckmatrix(arg0))
+      return _pcar(args,contextptr);
+    if (is_graphe(arg0,s,contextptr))
       return _graph_charpoly(args,contextptr);
     return _pcar(args,contextptr);
   }
@@ -6140,8 +6143,12 @@ static define_unary_function_eval (__hamdist,&_hamdist,_hamdist_s);
 		decimal_digits(nd,contextptr);
 		return pnt_attrib(gen(res,_GROUP__VECT),attributs,contextptr);
 	      } // end s==2
-	      if (s>=3)
-		v[2]=_floor(v[2],contextptr);
+	      if (s>=3){
+		if (v[2].type==_DOUBLE_ || v[2].type==_FRAC)
+		  v[2]=_floor((b-a)/v[2],contextptr);
+		else
+		  v[2]=_floor(v[2],contextptr);
+	      }
 	      if (s>=3 && v[2].type==_INT_){
 		int n=v[2].val;
 		if (n<1)
@@ -9275,6 +9282,11 @@ static define_unary_function_eval (__os_version,&_os_version,_os_version_s);
   bool freeze=false;
   void console_freeze(){
     giac::freeze=true;
+  }
+
+  int rgb888to565(int c){
+    int r=(c>>16)&0xff,g=(c>>8)&0xff,b=c&0xff;
+    return (((r*32)/256)<<11) | (((g*64)/256)<<5) | (b*32/256);
   }
 
   int rgb565to888(int c){

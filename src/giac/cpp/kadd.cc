@@ -314,7 +314,7 @@ int finance(int mode,GIAC_CONTEXT){ // mode==-1 pret, 1 placement
       xcas::textArea text;
       text.editable=false;
       text.clipline=-1;
-      text.title = (char*)((lang==1)?"Calcul d'un pret":"Finance help");
+      text.title = (char*)((lang==1)?(mode==-1?"Calcul d'un pret":"Interet d'un placement"):"Finance help");
       text.allowF1=true;
       text.python=python_compat(contextptr);
       std::vector<xcas::textElement> & elem=text.elements;
@@ -396,12 +396,14 @@ int finance(int mode,GIAC_CONTEXT){ // mode==-1 pret, 1 placement
   return 0;
 }
 
+int geoapp(GIAC_CONTEXT);
+
 int khicas_addins_menu(GIAC_CONTEXT){
   Menu smallmenu;
 #ifdef NUMWORKS
-  smallmenu.numitems=10; // INCREMENT IF YOU ADD AN APPLICATION
+  smallmenu.numitems=12; // INCREMENT IF YOU ADD AN APPLICATION
 #else
-  smallmenu.numitems=9; // INCREMENT IF YOU ADD AN APPLICATION
+  smallmenu.numitems=11; // INCREMENT IF YOU ADD AN APPLICATION
 #endif  
   // and uncomment first smallmenuitems[app_number].text="Reserved"
   // replace by your application name
@@ -412,17 +414,19 @@ int khicas_addins_menu(GIAC_CONTEXT){
   smallmenu.scrollbar=1;
   smallmenu.scrollout=1;
   smallmenuitems[0].text = (char*)((lang==1)?"Tableur":"Spreadsheet");
-  smallmenuitems[1].text = (char*)((lang==1)?"Table periodique":"Periodic table");
-  smallmenuitems[2].text = (char*)((lang==1)?"Pret":"Mortgage");
-  smallmenuitems[3].text = (char*)((lang==1)?"Epargne":"TVM");
-  smallmenuitems[4].text = (char*)((lang==1)?"Exemple simple: Syracuse":"Simple example; Syracuse");
-  smallmenuitems[5].text = (char*)((lang==1)?"Exemple de jeu: Mastermind":"Game example: Mastermind");
-  smallmenuitems[6].text = (char*)((lang==1)?"Fractale de Mandelbrot":"Mandelbrot fractal");
-  // smallmenuitems[5].text = (char*)"Mon application"; // adjust numitem !
-  // smallmenuitems[6].text = (char*)"Autre application";
-  // smallmenuitems[7].text = (char*)"Encore une autre";
-  // smallmenuitems[8].text = (char*)"Une avant-derniere";
-  // smallmenuitems[9].text = (char*)"Une derniere";
+  smallmenuitems[1].text = (char*)((lang==1)?"Geometrie":"Geometry");
+  smallmenuitems[2].text = (char*)((lang==1)?"Table periodique":"Periodic table");
+  smallmenuitems[3].text = (char*)((lang==1)?"Pret":"Mortgage");
+  smallmenuitems[4].text = (char*)((lang==1)?"Epargne":"TVM");
+  smallmenuitems[5].text = (char*)((lang==1)?"Table caracteres":"Char table");
+  smallmenuitems[6].text = (char*)((lang==1)?"Exemple simple: Syracuse":"Simple example; Syracuse");
+  smallmenuitems[7].text = (char*)((lang==1)?"Exemple de jeu: Mastermind":"Game example: Mastermind");
+  smallmenuitems[8].text = (char*)((lang==1)?"Fractale de Mandelbrot":"Mandelbrot fractal");
+  // smallmenuitems[8].text = (char*)"Mon application"; // adjust numitem !
+  // smallmenuitems[9].text = (char*)"Autre application";
+  // smallmenuitems[10].text = (char*)"Encore une autre";
+  // smallmenuitems[11].text = (char*)"Une avant-derniere";
+  // smallmenuitems[12].text = (char*)"Une derniere";
 #ifdef NUMWORKS
   smallmenuitems[smallmenu.numitems-3].text = (char*)((lang==1)?"Personnaliser la flash":"Customize flash");
 #endif
@@ -441,7 +445,9 @@ int khicas_addins_menu(GIAC_CONTEXT){
       // Attention les entrees sont decalees de 1
       if (smallmenu.selection==1) // tableur
 	sheet(contextptr);
-      if (smallmenu.selection==2){ // table periodique
+      if (smallmenu.selection==2) // geometry
+	geoapp(contextptr);
+      if (smallmenu.selection==3){ // table periodique
 	const char * name,*symbol;
 	char protons[32],nucleons[32],mass[32],electroneg[32];
 	int res=periodic_table(name,symbol,protons,nucleons,mass,electroneg);
@@ -477,17 +483,26 @@ int khicas_addins_menu(GIAC_CONTEXT){
 	    ptr=strcpy(ptr,",")+strlen(ptr);
 	  ptr=strcpy(ptr,electroneg+4)+strlen(ptr);
 	}
-	return Console_Input(console_buf);
+	copy_clipboard(console_buf,true);
+	// return Console_Input(console_buf);
       }
-      if (smallmenu.selection==3){
+      if (smallmenu.selection==4){
 	finance(-1,contextptr);
 	continue;
       }
-      if (smallmenu.selection==4){
+      if (smallmenu.selection==5){
 	finance(1,contextptr);
 	continue;
       }
-      if (smallmenu.selection==5){
+      if (smallmenu.selection==6){
+	int c=chartab();
+	if (c>=0){
+	  char buf[2]={c,0};
+	  copy_clipboard(buf,true);
+	}
+	break;
+      }
+      if (smallmenu.selection==7){
 	// Exemple simple d'application tierce: la suite de Syracuse
 	// on entre la valeur de u0
 	double d; int i;
@@ -509,12 +524,15 @@ int khicas_addins_menu(GIAC_CONTEXT){
 	}
 	// representation graphique de la liste en appelant la commande Xcas listplot
 	displaygraph(_listplot(v,contextptr),contextptr);
+	// copie vers presse-papier en l'affichant
+	copy_clipboard(gen(v).print(contextptr),true);
+	continue;
 	// on entre la liste en ligne de commande et on quitte
 	return Console_Input(gen(v).print(contextptr).c_str());
       }
-      if (smallmenu.selection==6) // mastermind, on ne quitte pas
+      if (smallmenu.selection==8) // mastermind, on ne quitte pas
 	mastermind(contextptr);
-      if (smallmenu.selection==7)
+      if (smallmenu.selection==9)
 	fractale(contextptr);
     } // end sres==menu_selection
     Console_Disp(1,contextptr);
@@ -1356,8 +1374,11 @@ void sheet_cmdline(tableur &t,GIAC_CONTEXT){
     if (g1.type==_VECT){
       doit=false;
       matrice & m=*g1._VECTptr;
-      if (!ckmatrix(m) && t.movedown)
-	m=mtran(vecteur(1,m));
+      if (!ckmatrix(m)){
+	m=vecteur(1,m);
+	if (t.movedown)
+	  m=mtran(m);
+      }
       matrice clip=t.clip;
       makespreadsheetmatrice(m,contextptr);
       t.clip=m;
@@ -1427,6 +1448,8 @@ giac::gen sheet(GIAC_CONTEXT){
   if (!sheetptr)
     sheetptr=new_tableur(contextptr);
   tableur & t=*sheetptr;
+  sheet_eval(t,contextptr,true);
+  t.changed=false;
   bool status_freeze=false;
   t.keytooltip=false;
   for (;;){
@@ -1668,7 +1691,7 @@ giac::gen sheet(GIAC_CONTEXT){
     if ( (key >= KEY_CTRL_F1 && key <= KEY_CTRL_F6) ||
 	  (key >= KEY_CTRL_F7 && key <= KEY_CTRL_F14) 
 	 ){
-      const char tmenu[]= "F1 stat1d\nsum(\nmean(\nstddev(\nmedian(\nhistogram(\nbarplot(\nboxwhisker(\nF2 stat2d\nlinear_regression_plot(\nlogarithmic_regression_plot(\nexponential_regression_plot(\npower_regression_plot(\npolynomial_regression_plot(\nsin_regression_plot(\nscatterplot(\npolygonscatterplot(\nF3 seq\nrange(\nseq(\ntableseq(\nplotseq(\ntablefunc(\nrandvector(\nrandmatrix(\nF4 edt\nedit_cell\nundo\ncopy_down\ncopy_right\ninsert_row\ninsert_col\nerase_row\nerase_col\nF6 graph\nreserved\nF= poly\nproot(\npcoeff(\nquo(\nrem(\ngcd(\negcd(\nresultant(\nGF(\nF: arit\n mod \nirem(\nifactor(\ngcd(\nisprime(\nnextprime(\npowmod(\niegcd(\nF8 list\nmakelist(\nrange(\nseq(\nlen(\nappend(\nranv(\nsort(\napply(\nF; plot\nplot(\nplotseq(\nplotlist(\nplotparam(\nplotpolar(\nplotfield(\nhistogram(\nbarplot(\nF7 real\nexact(\napprox(\nfloor(\nceil(\nround(\nsign(\nmax(\nmin(\nF< prog\n:\n&\n#\nhexprint(\nbinprint(\nf(x):=\ndebug(\npython(\nF> cplx\nabs(\narg(\nre(\nim(\nconj(\ncsolve(\ncfactor(\ncpartfrac(\nF= misc\n!\nrand(\nbinomial(\nnormald(\nexponentiald(\n\\\n % \n\n";
+      const char tmenu[]= "F1 stat1d\nsum(\nmean(\nstddev(\nmedian(\nhistogram(\nbarplot(\nboxwhisker(\nF2 stat2d\nlinear_regression_plot(\nlogarithmic_regression_plot(\nexponential_regression_plot(\npower_regression_plot(\npolynomial_regression_plot(\nsin_regression_plot(\nscatterplot(\npolygonscatterplot(\nF3 seq\nrange(\nseq(\ntableseq(\nplotseq(\ntablefunc(\nrandvector(\nrandmatrix(\nF4 edt\n$\n:\nedit_cell\nundo\ncopy_down\ncopy_right\ninsert_row\ninsert_col\nF6 graph\nreserved\nF= poly\nproot(\npcoeff(\nquo(\nrem(\ngcd(\negcd(\nresultant(\nGF(\nF: arit\n mod \nirem(\nifactor(\ngcd(\nisprime(\nnextprime(\npowmod(\niegcd(\nF8 list\nmakelist(\nrange(\nseq(\nlen(\nappend(\nranv(\nsort(\napply(\nF; plot\nplot(\nplotseq(\nplotlist(\nplotparam(\nplotpolar(\nplotfield(\nhistogram(\nbarplot(\nF7 real\nexact(\napprox(\nfloor(\nceil(\nround(\nsign(\nmax(\nmin(\nF< prog\n:\n&\n#\nhexprint(\nbinprint(\nf(x):=\ndebug(\npython(\nF> cplx\nabs(\narg(\nre(\nim(\nconj(\ncsolve(\ncfactor(\ncpartfrac(\nF= misc\n!\nrand(\nbinomial(\nnormald(\nexponentiald(\n\\\n % \n\n";
       const char * s=console_menu(key,(char *)tmenu,0);
       if (s && strlen(s)){
 	if (strcmp(s,"undo")==0){
@@ -1770,5 +1793,92 @@ giac::gen sheet(GIAC_CONTEXT){
   }
 }
 
-
+int geoapp(GIAC_CONTEXT){
+  if (!geoptr){
+    geoptr=new Graph2d(0,contextptr);
+    geoptr->window_xmin=-5;
+    geoptr->window_ymin=-5;
+    geoptr->window_zmin=-5;
+    geoptr->window_xmax=5;
+    geoptr->window_ymax=5;
+    geoptr->window_zmax=5;
+    geoptr->orthonormalize();
+  }
+  if (!geoptr)
+    return -1;
+  if (!geoptr->hp){
+    geoptr->hp=new textArea;
+    geoptr->hp->filename="figure.py";
+    geoptr->hp->python=0;
+  }
+  if (!geoptr->hp)
+    return -2;
+  textArea * text=geoptr->hp;
+  text->editable=true;
+  text->clipline=-1;
+  text->gr=geoptr;
+  geoptr->set_mode(0,0,255,""); // start in frame mode
+  // main loop: alternate between plot and symb view
+  // start in plot view
+  // end plot view with EXIT or OK -> symb view editor
+  // end with OK or EXIT: OK will modify, EXIT will leave geo app
+  // (press twice EXIT to leave geo app from plot view)
+  for (;;){
+    geoptr->eval();
+    geoptr->update();
+    if ( (geoptr->is3d=giac::is3d(geoptr->g)) )
+      geoptr->update_rotation();
+    int key=geoptr->ui();
+    if (key==KEY_SHUTDOWN)
+      return key;
+    // symb view editor
+    for (;;){
+      key=doTextArea(text,contextptr);
+      if (key== TEXTAREA_RETURN_EXIT || key==KEY_SHUTDOWN)
+	return key;
+      // key was OK, parse step: synchronize symbolic_instructions from text
+      bool corrige=false;
+      std::vector<textElement> & v=text->elements;
+      geoptr->symbolic_instructions.resize(v.size());
+      int pos=-1,i=0;
+      for (;i<int(v.size());++i){
+	std::string s=v[i].s; 
+	giac::python_compat(0,contextptr);
+	freeze=true;
+	giac::gen g(s,contextptr);
+	freeze=false;
+	g=equaltosto(g,contextptr);
+	int lineerr=giac::first_error_line(contextptr);
+	char status[256]={0};
+	geoptr->symbolic_instructions[i]=g;
+	if (lineerr){
+	  std::string tok=giac::error_token_name(contextptr);
+	  if (lineerr==1){
+	    pos=v[i].s.find(tok);
+	    const std::string & err=v[i].s;
+	    if (pos>=err.size())
+	      pos=-1;
+	  }
+	  else {
+	    tok=(lang==1)?"la fin":"end";
+	    pos=0;
+	  }
+	  if (pos>=0)
+	    sprintf(status,(lang==1)?"Erreur ligne %i a %s":"Error line %i at %s",i+1,tok.c_str());
+	  else
+	    sprintf(status,(lang==1)?"Erreur ligne %i %s":"Error line %i %s",i+1,(pos==-2?((lang==1)?", : manquant ?":", missing :?"):""));
+	  if (confirm(status,(lang==1)?"OK: corrige, back: continue":"OK: fix",1)==KEY_CTRL_F1){
+	    corrige=true; break;
+	  }
+	}
+      } // loop on lines
+      if (corrige){
+	text->line=i;
+	if (pos>=0 && pos<v[i].s.size()) text->pos=pos;
+      }
+      else
+	break;
+    } // end edition loop
+  } // end plot/symb view infinite loop
+}
 #endif
