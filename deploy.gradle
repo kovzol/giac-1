@@ -86,6 +86,16 @@ task javagiacMacJar (dependsOn: 'compileMacJavagiacRemotely', type: Jar) {
     classifier 'natives-macosx-universal'
 }
 
+// This is a verbatim copy of javagiacMacJar, without dependency. FIXME: unify
+task javagiacMacJarLocal (dependsOn: 'javagiacOsx_amd64SharedLibrary', type: Jar) {
+    description 'Creates the Mac .jar package for the Java Giac library.'
+    baseName = 'javagiac-mac'
+    destinationDir = javagiacDir
+    from "${buildDir}/binaries/javagiacSharedLibrary/osx_amd64" // FIXME: unify
+    include '*.jnilib'
+    classifier 'natives-macosx-universal'
+}
+
 task testJavagiacMac (dependsOn: 'javagiacMacJar') {
     description 'Tests the Mac version of Java Giac. [incubating]'
 }
