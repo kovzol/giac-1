@@ -112,7 +112,7 @@ jobs:
           mingw-w64-clang-x86_64-cmake
           mingw-w64-clang-x86_64-make
     - name: build
-      run: mkdir cbuild && cd cbuild && CC=clang CXX=clang++ cmake -G "MinGW Makefiles" .. && mingw32-make
+      run: mkdir cbuild64 && cd cbuild64 && CC=clang CXX=clang++ cmake -G "MinGW Makefiles" .. && mingw32-make
     - name: prerequisites2
       run: |
           choco install maven
