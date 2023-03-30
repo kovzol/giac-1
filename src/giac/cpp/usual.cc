@@ -2749,8 +2749,12 @@ namespace giac {
 
   // static symbolic symb_acosh(const gen & e){  return symbolic(at_cosh,e);  }
   static gen acoshasln(const gen & x,GIAC_CONTEXT){
-    if (re(x,contextptr)==x)
-      return ln(x+sqrt(x*x-1,contextptr),contextptr); // avoid multiple sqrt but it's the opposite for example for x non real
+    if (re(x,contextptr)==x){
+      gen res=ln(x+sqrt(x*x-1,contextptr),contextptr);
+      if (is_positive(-x,contextptr))
+	return -res; // avoid multiple sqrt but it's the opposite for example for x non real
+      return res;
+    }
     return ln(x+sqrt(x+1,contextptr)*sqrt(x-1,contextptr),contextptr);
   }
   gen acosh(const gen & e0,GIAC_CONTEXT){
@@ -4609,6 +4613,18 @@ namespace giac {
 	arg1=v[0].eval(eval_level(contextptr),contextptr);
       else
 	arg1=v[1].eval(eval_level(contextptr),contextptr);
+      // additionnal check for recursive assumptions like assume(a<b); assume(b<a);
+      vecteur iarg1(lidnt(v[1]));
+      for (int i=0;i<iarg1.size();++i){
+	gen cur=iarg1[i];
+	if (cur.type==_IDNT){
+	  gen cur1=cur._IDNTptr->eval(eval_level(contextptr),arg0,contextptr);
+	  if (equalposcomp(lidnt(cur1),arg0)){
+	    *logptr(contextptr) << "Recursive assumption " << a << " ignored\n";
+	    return 0;
+	  }
+	}
+      }
       gen borne_inf(gnuplot_xmin),borne_sup(gnuplot_xmax),pas;
       if ( s==at_equal || s== at_equal2 || s==at_same || s==at_sto ){     
 	// ex: assume(a=[1.7,1.1,2.3])
@@ -7491,12 +7507,20 @@ namespace giac {
     return symbolic(at_evalf,a);  
   }
 
+  typedef void (*function)(void);
+#if defined TICE
+  const char platform_type='8'; // 8 bits
+#elseif defined SMARTPTR64
+  const char platform_type='6'; // 64 bits
+#else
+  const char platform_type='3'; // 32 bits
+#endif
   gen _eval(const gen & a,GIAC_CONTEXT){
     if ( a.type==_STRNG && a.subtype==-1) return  a;
     if (python_compat(contextptr)){
       gen b=eval(a,1,contextptr);
       if (b.type==_STRNG)
-	return _expr(b,contextptr);
+        return _expr(b,contextptr);
     }
     if (is_equal(a) &&a._SYMBptr->feuille.type==_VECT && a._SYMBptr->feuille._VECTptr->size()==2){
       vecteur & v(*a._SYMBptr->feuille._VECTptr);
@@ -7505,8 +7529,18 @@ namespace giac {
     if (a.type==_VECT && a.subtype==_SEQ__VECT && a._VECTptr->size()==2){
       gen a1=a._VECTptr->front(),a2=a._VECTptr->back();
       if (a2.type==_INT_)
-	return a1.eval(a2.val,contextptr);
-      return _subst(gen(makevecteur(eval(a1,eval_level(contextptr),contextptr),a2),_SEQ__VECT),contextptr);
+        return a1.eval(a2.val,contextptr);
+      a1=eval(a1,eval_level(contextptr),contextptr);
+      if (a2.type==_STRNG && a2._STRNGptr->size()==4){
+        const char * ptr=a2._STRNGptr->c_str();
+        if (ptr[0]=='a' && ptr[1]=='s' && ptr[2]=='m' && ptr[3]==platform_type && a1.type==_STRNG){
+          const char * ptr=a1._STRNGptr->c_str();
+          function F= function (ptr);
+          F();
+          return 1;
+        }
+      }
+      return _subst(gen(makevecteur(a1,a2),_SEQ__VECT),contextptr);
     }
     return a.eval(1,contextptr).eval(eval_level(contextptr),contextptr);
   }
@@ -8011,6 +8045,20 @@ namespace giac {
 	}
 	return factnum/factden*sqrt(cst_pi,contextptr);
       }
+      // additions by L.Marohnić: reduction for x=p/q in (-1,1) to Gamma(min(abs(p),abs(q-p))/q)
+      if (x._FRACptr->num.type==_INT_ && !is_zero(x._FRACptr->num) &&
+          is_strictly_greater(x._FRACptr->den,_abs(x._FRACptr->num,contextptr),contextptr)) {
+        int p=x._FRACptr->num.val,q=x._FRACptr->den.val;
+        if (!is_positive(x._FRACptr->num,contextptr))
+          return ratnormal(_inv(x,contextptr)*Gamma(1+x,contextptr),contextptr);
+        if (is_strictly_greater(2*x._FRACptr->num,x._FRACptr->den,contextptr))
+          return ratnormal(cst_pi/(Gamma(1-x,contextptr)*sin(cst_pi*x,contextptr)),contextptr);
+        return symbolic(at_Gamma,x);
+      }
+      // handle negative fractions
+      if (x._FRACptr->num.type==_INT_ && !is_positive(x,contextptr))
+        return ratnormal(-cst_pi/(Gamma(-x,contextptr)*x*sin(cst_pi*x,contextptr)),contextptr);
+      // end additions by L.Marohnić
       // normalize Gamma(n/d) to fractional part ?
       gen xd=evalf_double(x,1,contextptr),X=x;
       if (xd.type==_DOUBLE_){
@@ -8134,6 +8182,11 @@ namespace giac {
     return symbolic(at_Gamma,x);
 #endif
   }
+
+  // Gamma, to Mathematica Gamma (from Albert Chan
+  // https://www.hpmuseum.org/forum/thread-19088-post-166001.html#pid166001)
+  // CAS> gamma(a,x) := when(x<0, [Gamma(a),Gamma(a,x)] * [1+(-1)^a,-(-1)^a], Gamma(a,x))
+  //CAS> gamma(4/5,-6.)      → 238.757077078-172.62130796*i
   gen _Gamma(const gen & args,GIAC_CONTEXT) {
     if ( args.type==_STRNG && args.subtype==-1) return  args;
     return Gamma(args,contextptr);
@@ -10588,7 +10641,7 @@ namespace giac {
     if (args.type==_VECT)
       return apply(args,_Heaviside,contextptr);
     if (is_zero(args,contextptr))
-      return plus_one;
+      return plus_one_half; // changed by L.Marohnić
     gen tmp=_sign(args,contextptr);
     if (tmp.type<=_DOUBLE_)
       return (tmp+1)/2;
@@ -11219,6 +11272,63 @@ namespace giac {
     of << deg2rad_e << " " << '\n';
 #endif
   }
+
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS
+#else
+  // additions by L. Marohnić:
+  string to_unix_path(const string &path) {
+    string ret;
+    ret.reserve(path.size());
+    string::const_iterator it=path.begin(),itend=path.end();
+    for (;it!=itend;++it) {
+      switch (*it) {
+      case '\\':
+        ret.push_back('/');
+        break;
+      default:
+        ret.push_back(*it);
+        break;
+      }
+    }
+    return ret;
+  }
+  /* Create a temporary file name (using the fallback filename if tmpnam fails).
+   * Optionally, extension EXT may be specified, without the leading dot.*/
+  string temp_file_name(const char *fallback_name,const char *ext) {
+    char buf[L_tmpnam];
+    bool has_temp_file=(tmpnam(buf)!=NULL);
+    string tmpname(has_temp_file?buf:fallback_name);
+#ifdef _WIN32
+    string tmpdir=getenv("TEMP")?getenv("TEMP"):"c:\\Users\\Public\\";
+    tmpname=tmpdir+tmpname;
+    if (tmpname[tmpname.size()-1]=='.')
+        tmpname.erase(tmpname.begin()+tmpname.size()-1);
+#endif
+    if (ext!=NULL)
+      tmpname+="."+string(ext);
+    return tmpname;
+  }
+  /* Return true iff the file FNAME exists. */
+  bool ckfileexists(const char *fname) {
+    if (FILE *f=fopen(fname,"r")) {
+      fclose(f);
+      return true;
+    }
+    return false;
+  }
+  temp_file::temp_file(const char *fallback_name,const char *ext) {
+    _fname=temp_file_name(fallback_name,ext);
+    handle=fopen(_fname.c_str(),"wb+");
+  }
+  temp_file::~temp_file() {
+    if (ckfileexists(_fname.c_str())) {
+      if (handle!=NULL)
+        fclose(handle);
+      if (remove(_fname.c_str())!=0 && debug_infolevel)
+        cerr << gettext("Failed to remove temporary file") << " '" << _fname << "'\n";
+    }
+  }
+#endif
 
 #ifndef NO_NAMESPACE_GIAC
 } // namespace giac

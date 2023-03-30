@@ -519,7 +519,6 @@ namespace giac {
       return false;
     }
   }
-
   gen subst(const gen & e,const gen & i,const gen & newi,bool quotesubst,GIAC_CONTEXT){
     if (is_inequation(newi) || newi.is_symb_of_sommet(at_and) || newi.is_symb_of_sommet(at_ou))
       return gensizeerr(contextptr);
@@ -1768,10 +1767,13 @@ namespace giac {
     if (e._SYMBptr->feuille.type==_VECT){
       vecteur & v=*e._SYMBptr->feuille._VECTptr;
       if (e._SYMBptr->sommet==at_pow  && v[1].type!=_INT_ && !(v[1].type==_FRAC && is_integer(v[0]))){
-	gen g=pow2expln(v[0],contextptr);
-	if (g.is_symb_of_sommet(at_exp))
-	  return symb_exp(g._SYMBptr->feuille*pow2expln(v[1],contextptr));
-	return symb_exp(pow2expln(v[1],contextptr)*symb_ln(g));
+	gen v0;
+	if (1 || !has_evalf(v[0],v0,1,contextptr)){
+	  gen g=pow2expln(v[0],contextptr);
+	  if (g.is_symb_of_sommet(at_exp))
+	    return symb_exp(g._SYMBptr->feuille*pow2expln(v[1],contextptr));
+	  return symb_exp(pow2expln(v[1],contextptr)*symb_ln(g));
+	}
       }
     }
     return e._SYMBptr->sommet(pow2expln(e._SYMBptr->feuille,contextptr),contextptr); 
@@ -2033,6 +2035,8 @@ namespace giac {
       vecteur & ligne=*m[i]._VECTptr;
       gen res(plus_one);
       for (int j=0;j<c;++j){
+	if (ligne[j]>FFTMUL_SIZE) // exponent too large for further simplifications
+	  return e;
 	res=res*pow(independant[j],ligne[j],contextptr);
       }
       newl[i]=res;

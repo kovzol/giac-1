@@ -48,6 +48,10 @@ using namespace std;
 #include "modfactor.h"
 #include "quater.h"
 #include "giacintl.h"
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS
+#else
+#include "signalprocessing.h"
+#endif
 #ifdef HAVE_LIBGSL
 #include <gsl/gsl_linalg.h>
 #include <gsl/gsl_eigen.h>
@@ -3154,6 +3158,7 @@ namespace giac {
   }
 
   void multmatvecteur(const matrice & a,const vecteur & b,vecteur & res){
+#ifndef HP39
     vector<int> B; gen x;
     int btype=gf_char2_vecteur2vectorint(b,B,x);
     if (btype>0){
@@ -3167,6 +3172,7 @@ namespace giac {
 	  res.push_back(galois_field(plus_two,btype,x,dotgf_char2(*ita,B,btype)));
       }
     }
+#endif
     vecteur::const_iterator ita=a.begin(), itaend=a.end();
     res.clear();
     res.reserve(itaend-ita);
@@ -14757,7 +14763,7 @@ namespace giac {
 	      char_m=mergematrice(char_m,mtran(*cur_m._VECTptr));
 	    if (is_undef(char_m) || (!jordan && !is_zero(cur_m,contextptr)) ){
 #ifndef NO_STDEXCEPT
-	      throw(std::runtime_error("Not diagonalizable at eigenvalue "+x.print()));
+	      gensizeerr("Not diagonalizable at eigenvalue "+x.print());
 #endif
 	      return false;
 	    }
@@ -15202,8 +15208,81 @@ namespace giac {
     return v;
   }
 
+  // adapted by L. Marohnić for image loading and creation
   gen _image(const gen & a,GIAC_CONTEXT){
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined EMCC || defined EMCC2
     if ( a.type==_STRNG && a.subtype==-1) return  a;
+#else
+    if (a.type==_STRNG) {
+      if (a.subtype==-1) return a;
+      if (load_image_ptr)
+        return load_image_ptr(a._STRNGptr->c_str(),contextptr);
+      return generr(gettext("FLTK is required for loading images"));
+    }
+    if (a.type==_VECT && a.subtype==_SEQ__VECT) {
+      const vecteur &args=*a._VECTptr;
+      if (args.size()<2)
+        return gendimerr(contextptr);
+      if (!args.front().is_integer())
+        return gentypeerr(contextptr);
+      int d=args.front().val,w=0,h=0;
+      if (d<1 || d>4)
+        return generr(gettext("Invalid color type"));
+      if (args.back().type==_STRNG) {
+        if (args.size()!=3)
+          return gendimerr(contextptr);
+        if (!args[1].is_integer())
+          return gentypeerr(contextptr);
+        w=args[1].val;
+        try {
+          return rgba_image(d,w,*args.back()._STRNGptr,contextptr);
+        } catch (const std::runtime_error &e) {
+          return generr(e.what());
+        }
+      }
+      if (args.size()-1>d)
+        return gendimerr(contextptr);
+      vector<const gen*> data;
+      switch (d) {
+      case 1:
+        data.push_back(&args[1]);
+        break;
+      case 2:
+        data.push_back(&args[1]);
+        if (args.size()>2)
+          data.push_back(&args[2]);
+        else data.push_back(NULL);
+        break;
+      case 3:
+        if (args.size()==2)
+          data=vector<const gen*>(3,&args[1]);
+        else if (args.size()==4) {
+          data.push_back(&args[1]);
+          data.push_back(&args[2]);
+          data.push_back(&args[3]);
+        } else return gendimerr(contextptr);
+        break;
+      case 4:
+        if (args.size()<4) {
+          data=vector<const gen*>(3,&args[1]);
+          data.push_back(args.size()==2?NULL:&args[2]);
+        } else {
+          data.push_back(&args[1]);
+          data.push_back(&args[2]);
+          data.push_back(&args[3]);
+          if (args.size()>4)
+            data.push_back(&args[4]);
+          else data.push_back(NULL);
+        }
+        break;
+      }
+      try {
+        return rgba_image(data,contextptr);
+      } catch (const std::runtime_error &e) {
+        return generr(e.what());
+      }
+    }
+#endif
     if (!ckmatrix(a))
       return symb_image(a);
     vecteur v;
@@ -15332,6 +15411,17 @@ namespace giac {
   }
   gen _size(const gen &args,GIAC_CONTEXT){
     if (args.type==_STRNG && args.subtype==-1) return args;
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined EMCC || defined EMCC2
+#else
+    /* size of image or audio clip, addition by L. Marohnić */
+    audio_clip *clip=audio_clip::from_gen(args);
+    rgba_image *img=rgba_image::from_gen(args);
+    if (clip!=NULL)
+      return clip->length();
+    if (img!=NULL)
+      return makevecteur(img->width(),img->height());
+    /* end audio clip or image size */
+#endif
     if (args.type==_STRNG)
       return (int) args._STRNGptr->size();
     if (args.type==_SYMB){
@@ -16134,6 +16224,14 @@ namespace giac {
     }
     return true;
   }
+
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS 
+#else
+  bool log_output_redirect::has_warning() const {
+    return buffer.str().find(gettext("warning"))!=std::string::npos ||
+      buffer.str().find(gettext("Warning"))!=std::string::npos;
+  }
+#endif
 
   gen _ldl(const gen &g,GIAC_CONTEXT) {
     if (g.type==_STRNG && g.subtype==-1) return g;

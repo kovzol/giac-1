@@ -6052,7 +6052,17 @@ namespace giac {
       }
       for (it=newp._POLYptr->coord.begin();it!=itend;++it){
 	if (it->value.type==_EXT)
+	  it->value=ext_reduce(it->value);	  
+#if 1 // added for f:=(-40*a_t^4*6*sqrt(6)+100*a_t^4*6+230*a_t^4*sqrt(6)-576*a_t^4-20*i*a_t^3*sqrt(-(2*sqrt(6))^2+25)*6-(-100*i)*a_t^3*sqrt(-(2*sqrt(6))^2+25)*sqrt(6)-120*i*a_t^3*sqrt(-(2*sqrt(6))^2+25)-20*i*a_t*sqrt(-(2*sqrt(6))^2+25)*6-(-100*i)*a_t*sqrt(-(2*sqrt(6))^2+25)*sqrt(6)-120*i*a_t*sqrt(-(2*sqrt(6))^2+25)+40*6*sqrt(6)-100*6-230*sqrt(6)+576)/(198*sqrt(6)-485);g:=factor(f);normal(f-g);
+	if (it->value.type==_EXT){
+	  if (the_ext.type==_EXT)
+	    common_EXT(*(it->value._EXTptr+1),*(the_ext._EXTptr+1),0,context0);
 	  it->value=ext_reduce(it->value);
+	  the_ext=ext_reduce(the_ext);
+	  if (the_ext.type==_FRAC)
+	    the_ext=the_ext._FRACptr->num;
+	}
+#endif
       }
       gen bn2=1;
       lcmdeno(*newp._POLYptr,bn2);
@@ -6507,8 +6517,29 @@ namespace giac {
     return true;
   }
 
+  bool has_gf_coeff(const polynome & p,gen & modulo){
+#ifdef RTTI
+    vector< monomial<gen> >::const_iterator it=p.coord.begin(),itend=p.coord.end();
+    for (;it!=itend;++it){
+      if (it->type==_USER){
+        if (galois_field * ptr=dynamic_cast<galois_field *>(it->_USERptr)){
+          modulo=ptr->p;
+          return true;
+        }
+      }
+    }
+#endif
+    return false;
+  }
+
   factorization sqff(const polynome &p ){
-    factorization f=Tsqff_char0<gen>(p);
+    factorization f; gen m;
+    if ( (has_mod_coeff(p,m) || has_gf_coeff(p,m)) && m.type==_INT_){
+      // otherwise it's like if char is 0
+      f=squarefree_fp(p,m.val,1);
+    }
+    else
+      f=Tsqff_char0<gen>(p);
     // take care of cst coefficients
     if (!p.coord.empty()){
       gen p0=p.coord.front().value,p1(1);

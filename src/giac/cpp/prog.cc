@@ -67,6 +67,10 @@ extern "C" {
 #include "csturm.h"
 #include "sparse.h"
 #include "giacintl.h"
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS
+#else
+#include "signalprocessing.h"
+#endif
 // #include "input_parser.h"
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
@@ -7453,6 +7457,27 @@ namespace giac {
   static define_unary_function_eval (__inferieur_strict_sort,&_inferieur_strict_sort,_inferieur_strict_sort_s);
   define_unary_function_ptr5( at_inferieur_strict_sort ,alias_at_inferieur_strict_sort,&__inferieur_strict_sort,0,true);
 
+#if 0
+  void mysort(iterateur it,iterateur itend,const gen & f,GIAC_CONTEXT){
+    int s=itend-it;
+    for (;;){
+      bool ok=true;
+      for (int i=0;i<s-1;++i){
+	if (!is_zero(f(makesequence(*(it+i+1),*(it+i)),contextptr))){
+	  ok=false;
+	  swapgen(*(it+i+1),*(it+i));
+	}
+      }
+      if (ok)
+	return;
+    }
+  }
+#else
+  void mysort(iterateur it,iterateur itend,const gen & f,GIAC_CONTEXT){
+    sort(it,itend,gen_sort(f,contextptr));
+  }
+#endif
+
   gen _sort(const gen & args,GIAC_CONTEXT){
     if ( args.type==_STRNG &&  args.subtype==-1) return  args;
     if (args.type==_SYMB)
@@ -7516,7 +7541,7 @@ namespace giac {
 	return gen(v,subtype);
       }
     }
-    sort(v.begin(),v.end(),gen_sort(f,contextptr));
+    mysort(v.begin(),v.end(),f,contextptr);
     if (rev)
       reverse(v.begin(),v.end());
     return gen(v,subtype);
@@ -8518,6 +8543,19 @@ namespace giac {
   static define_unary_function_eval (__read32,&_read32,_read32_s);
   define_unary_function_ptr5( at_read32 ,alias_at_read32 ,&__read32,0,true);
 
+  gen _addr(const gen & g,GIAC_CONTEXT){
+    if (g.type==_VECT && g.subtype==_SEQ__VECT && g._VECTptr->size()==2){
+      gen & obj=g._VECTptr->front();
+      vecteur & ptr=*obj._VECTptr;
+      return makevecteur((longlong) (&ptr),(int) taille(obj,RAND_MAX),tailles(obj));
+    }
+    vecteur & ptr=*g._VECTptr;
+    return (longlong) (&ptr);
+  }
+  static const char _addr_s []="addr";
+  static define_unary_function_eval (__addr,&_addr,_addr_s);
+  define_unary_function_ptr5( at_addr ,alias_at_addr,&__addr,0,true);
+
 #ifdef NSPIRE_NEWLIB
   gen _read_nand(const gen & args,GIAC_CONTEXT){
     if ( args.type==_STRNG &&  args.subtype==-1)
@@ -8527,7 +8565,7 @@ namespace giac {
       int n=args._VECTptr->back().val;
       if (n<=0 || !is_address(args._VECTptr->front(),addr)) 
 	return undef;
-      // void read_nandd(void* dest, int size, int nand_offset, int unknown, int percent_max, void* progress_cb); // terminer par (...,0,0,NULL)
+      // void read_nand(void* dest, int size, int nand_offset, int unknown, int percent_max, void* progress_cb); // terminer par (...,0,0,NULL)
       char * dest=(char *)malloc(4*n);
       read_nand(dest,4*n,addr,0,0,NULL);
       char buf[5]="aaaa";
@@ -8637,9 +8675,10 @@ namespace giac {
       return _read32(args,contextptr);
     if (args.type==_VECT){
       vecteur v=*args._VECTptr;
+      if (v.empty()) return gensizeerr(contextptr);
+      gen vf=v.front(),vb=v.back();
       size_t addr;
-      if (v.size()==2 && is_address(v.front(),addr)){
-	gen vb=v.back();
+      if (v.size()==2 && is_address(vf,addr)){
 	unsigned * ptr =(unsigned *) addr;
 	if (vb.type==_INT_){
 	  *ptr=vb.val;
@@ -13395,7 +13434,6 @@ namespace giac {
   static const char _SetFold_s []="SetFold";
   static define_unary_function_eval2_quoted (__SetFold,&_SetFold,_SetFold_s,&printastifunction);
   define_unary_function_ptr5( at_SetFold ,alias_at_SetFold,&__SetFold,_QUOTE_ARGUMENTS,T_RETURN); 
-
   
   static string printaspiecewise(const gen & feuille,const char * sommetstr,GIAC_CONTEXT){
     // if ( feuille.type!=_VECT || feuille._VECTptr->empty() || abs_calc_mode(contextptr)!=38)
@@ -13421,6 +13459,26 @@ namespace giac {
   gen _piecewise(const gen & g,GIAC_CONTEXT){
     if ( g.type==_STRNG &&  g.subtype==-1) return  g;
     // evaluate couples of condition/expression, like in a case
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS
+#else
+    // change by L. Marohnić: convert g to piecewise
+    gen gg=unquote(g,contextptr);
+    if (gg.type!=_VECT || (gg.subtype==_SEQ__VECT && gg._VECTptr->size()==2 &&
+        !is_logical(gg._VECTptr->front()) && gg._VECTptr->back().type==_IDNT)) {
+      gen e=flatten_piecewise(gg.type==_VECT?gg._VECTptr->front():gg,contextptr);
+      gen x=gg.type==_VECT?gg._VECTptr->back():undef;
+      if (!is_undef(x) && _eval(x,contextptr).type!=_IDNT)
+        return gentypeerr(contextptr);
+      vecteur vars=is_undef(x)?*_revlist(_sort(_lname(e,contextptr),contextptr),contextptr)._VECTptr:vecteur(1,x);
+      for (const_iterateur it=vars.begin();it!=vars.end();++it) {
+        if (it->type!=_IDNT) continue;
+        gen p=to_piecewise(e,*it->_IDNTptr,contextptr);
+        if (p.is_symb_of_sommet(at_piecewise))
+          return p;
+      }
+      return gg.type==_VECT?gg._VECTptr->front():gg;
+    }
+#endif
     if (g.type!=_VECT)
       return g;
     vecteur & v =*g._VECTptr;

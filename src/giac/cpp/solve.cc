@@ -429,9 +429,9 @@ namespace giac {
       if (equalposcomp(excluded,*it))
 	continue;
       gen sol=*it;
-      if (l!=minus_inf && sign(l-sol,contextptr)==1)
+      if (l!=minus_inf && fastsign(l-sol,contextptr)==1)
 	continue;
-      if (m!=plus_inf && sign(sol-m,contextptr)==1)
+      if (m!=plus_inf && fastsign(sol-m,contextptr)==1)
 	continue;
       sol=evalf(sol,eval_level(contextptr),contextptr);
       if (!(isolate_mode &1) && ( (sol.type==_CPLX && !is_zero(im(sol,contextptr),contextptr))
@@ -668,14 +668,14 @@ namespace giac {
 	      // write a*x+b=a/E*(E*x+F)+b-a*F/E
 	      // a/E*(E*x+F)*exp(a/E*(E*x+F))=-D*a/E*exp(a*F/E-b)
 	      gen delta=-D*a/E*exp(a*F/E-b,contextptr);
-	      if (is_greater(m1,delta,contextptr))
+	      if (is_strictly_greater(m1,delta,contextptr))
 		return; // no solution
-	      gen sol=(_LambertW(delta,contextptr)-F/E)/a;
-	      v.push_back((sol-b)/a);
+	      gen sol=_LambertW(delta,contextptr)/a-F/E;
+	      v.push_back(sol);
 	      if (is_positive(delta,contextptr)|| delta==m1)
 		return;
-	      sol=(_LambertW(makesequence(delta,-1),contextptr)-F/E)/a;
-	      v.push_back((sol-b)/a);
+	      sol=_LambertW(makesequence(delta,-1),contextptr)/a-F/E;
+	      v.push_back(sol);
 	      return;
 	    }
 	  }
@@ -689,7 +689,7 @@ namespace giac {
 	    in_solve(tfact,*t._IDNTptr,vt,isolate_mode,contextptr);
 	    const_iterateur it=vt.begin(),itend=vt.end();
 	    for (;it!=itend;++it){
-	      if (is_greater(m1,*it,contextptr))
+	      if (is_strictly_greater(m1,*it,contextptr))
 		continue;
 	      v.push_back((_LambertW(*it,contextptr)-b)/a);
 	      if (is_strictly_positive(-*it,contextptr))
@@ -706,7 +706,7 @@ namespace giac {
 	    in_solve(tfact,*t._IDNTptr,vt,isolate_mode,contextptr);
 	    const_iterateur it=vt.begin(),itend=vt.end();
 	    for (;it!=itend;++it){
-	      if (is_greater(m1,*it,contextptr))
+	      if (is_strictly_greater(m1,*it,contextptr))
 		continue;
 	      v.push_back((b-_LambertW(*it,contextptr))/a);
 	      if (is_strictly_positive(-*it,contextptr))
@@ -828,27 +828,30 @@ namespace giac {
       vecteur new_v=solve(new_e,localt,isolate_mode,contextptr);
       const_iterateur it=new_v.begin(),itend=new_v.end();
       for (;it!=itend;++it){
-	if (pos==-2){
-	  set_merge(v,vecteur(1,pow(*it,xvar._SYMBptr->feuille[0],contextptr)));
-	  continue;
-	}
-	if (pos==-1){
-	  // solve piecewise()==*it
-	  set_merge(v,solve_piecewise(xvar._SYMBptr->feuille,*it,x,isolate_mode,contextptr));
-	  if (is_undef(v)) return;
-	  continue;
-	}
-	if ( (isolate_mode & 1)==0 && (pos==3 || pos==4) && is_strictly_greater(*it**it,1,contextptr)){
-	  continue;
-	}
-	gen res=isolate_fcns[pos-1](*it,isolate_mode,contextptr);
-	if (res.type!=_VECT)
-	  set_merge(v,solve(xvar._SYMBptr->feuille-res,x,isolate_mode,contextptr));
-	else {
-	  const_iterateur it=res._VECTptr->begin(),itend=res._VECTptr->end();
-	  for (;it!=itend;++it)
-	    set_merge(v,solve(xvar._SYMBptr->feuille-*it,x,isolate_mode,contextptr));
-	}
+        if (pos==-2){
+          set_merge(v,vecteur(1,pow(*it,xvar._SYMBptr->feuille[0],contextptr)));
+          continue;
+        }
+        if (pos==-1){
+          // solve piecewise()==*it
+          set_merge(v,solve_piecewise(xvar._SYMBptr->feuille,*it,x,isolate_mode,contextptr));
+          if (is_undef(v)) return;
+          continue;
+        }
+        if ( (isolate_mode & 1)==0 && (pos==3 || pos==4) && is_strictly_greater(*it**it,1,contextptr)){
+          continue;
+        }
+        gen res=isolate_fcns[pos-1](*it,isolate_mode,contextptr);
+        if (res.type!=_VECT)
+          set_merge(v,solve(xvar._SYMBptr->feuille-res,x,isolate_mode,contextptr));
+        else {
+          const_iterateur it=res._VECTptr->begin(),itend=res._VECTptr->end();
+          for (;it!=itend;++it)
+            if (xvar._SYMBptr->feuille==x)
+              v.push_back(*it);
+            else
+              set_merge(v,solve(xvar._SYMBptr->feuille-*it,x,isolate_mode,contextptr));
+        }
       }
       solve_ckrange(x,v,isolate_mode,contextptr);
       return;
@@ -1890,12 +1893,12 @@ namespace giac {
 	// tmp=a*tmplv[0]+c*tmplv[1]+d
 	if (tmplv[0]._SYMBptr->sommet==at_sin && tmplv[1]._SYMBptr->sommet==at_cos){
 	  // a*sin(x)+c*cos(x)=C*sin(x+phi) where exp(i*phi)=a+i*c;
-	  gen phi=arg(halftan(a+cst_i*c,contextptr),contextptr);
+	  gen phi=is_zero(d)?atan(halftan(c/a,contextptr),contextptr):arg(halftan(a+cst_i*c,contextptr),contextptr);
 	  tmp=sqrt(a*a+c*c,contextptr)*sin(tmplv[0]._SYMBptr->feuille+phi,contextptr)+d;
 	}
 	if (tmplv[0]._SYMBptr->sommet==at_cos && tmplv[1]._SYMBptr->sommet==at_sin){
 	  // a*cos(x)+c*sin(x)=C*sin(x+phi) where exp(i*phi)=c+i*a;
-	  gen phi=arg(halftan(c+cst_i*a,contextptr),contextptr);
+	  gen phi=is_zero(d)?atan(halftan(a/c,contextptr),contextptr):arg(halftan(c+cst_i*a,contextptr),contextptr);
 	  tmp=sqrt(a*a+c*c,contextptr)*sin(tmplv[0]._SYMBptr->feuille+phi,contextptr)+d;
 	}
       }
@@ -1904,12 +1907,12 @@ namespace giac {
 	  // tmp=a*tmplv[0]+c*tmplv[1]+d
 	  if (tmplv[1]._SYMBptr->sommet==at_sin && tmplv[0]._SYMBptr->sommet==at_cos){
 	    // a*sin(x)+c*cos(x)=C*sin(x+phi) where exp(i*phi)=a+i*c;
-	    gen phi=arg(halftan(a+cst_i*c,contextptr),contextptr);
+	    gen phi=is_zero(d)?atan(halftan(c/a,contextptr),contextptr):arg(halftan(a+cst_i*c,contextptr),contextptr);
 	    tmp=sqrt(a*a+c*c,contextptr)*sin(tmplv[1]._SYMBptr->feuille+phi,contextptr)+d;
 	  }
 	  if (tmplv[1]._SYMBptr->sommet==at_cos && tmplv[0]._SYMBptr->sommet==at_sin){
 	    // a*cos(x)+c*sin(x)=C*sin(x+phi) where exp(i*phi)=c+i*a;
-	    gen phi=arg(halftan(c+cst_i*a,contextptr),contextptr);
+	    gen phi=is_zero(d)?atan(halftan(a/c,contextptr),contextptr):arg(halftan(c+cst_i*a,contextptr),contextptr);
 	    tmp=sqrt(a*a+c*c,contextptr)*sin(tmplv[1]._SYMBptr->feuille+phi,contextptr)+d;
 	  }
 	}
@@ -2786,6 +2789,8 @@ namespace giac {
       w=mergevecteur(w1,w2);
       arg1=w;
     }
+    if (arg1.is_symb_of_sommet(at_plus) && arg1._SYMBptr->feuille._VECTptr->size()==2)
+      arg1=symb_equal(arg1,0);
     if (arg1.type!=_VECT && !is_equal(arg1) && !is_inequation(arg1))
       *logptr(contextptr) << gettext("Warning, argument is not an equation, solving ") << arg1 << "=0" << '\n';
     else {
@@ -2847,10 +2852,13 @@ namespace giac {
 	      if (!is_zero(res2))
 		res2=_simplify(_solve(makesequence(symb_equal(res2,0),var2),contextptr),contextptr);
 	      gen res3=derive(eq2,var2,contextptr);
-	      if (!is_zero(res3))
-		res3=_simplify(subst(eq2,var1,v1val,false,contextptr),contextptr);
 	      if (!is_zero(res3)){
-		res3=_simplify(_solve(makesequence(symb_equal(res3,0),var2),contextptr),contextptr);
+		res3 = subst(eq2,var1,v1val,false,contextptr);
+		res3=_simplify(res3,contextptr);
+	      }
+	      if (!is_zero(res3)){
+		res3=_solve(makesequence(symb_equal(res3,0),var2),contextptr);
+		res3=_simplify(res3,contextptr);
 		if (is_zero(res2))
 		  res2=res3;
 		else
@@ -2906,6 +2914,12 @@ namespace giac {
 	      gen res1=_solve(makesequence(symb_equal(a12,0),v.back()),contextptr);
 	      gen res2=_solve(makesequence(symb_equal(ratnormal(a1/a12,contextptr),ratnormal(a2/a12,contextptr)),v.back()),contextptr);
 	      return gen(mergevecteur(gen2vecteur(res1),gen2vecteur(res2)),res1.subtype);
+	    }
+	    if (w.size()>=3){
+	      gen tst=tsimplify(_lin(a1/a2,contextptr),contextptr);
+	      w=lvarx(tst,v.back());
+	      if (w.size()==1)
+		return _solve(makesequence(tst-1,v.back()),contextptr);
 	    }
 	    gen a1arg,a2arg; 
 	    bool a1log=is_log10(a1,a1arg),a2log=is_log10(a2,a2arg);
@@ -3000,6 +3014,14 @@ namespace giac {
   }
   gen _solve(const gen & args,GIAC_CONTEXT){
     if ( args.type==_STRNG && args.subtype==-1) return  args;
+    if (is_equal(args) && args._SYMBptr->feuille[1]==0 && args._SYMBptr->feuille[0].type==_INT_){
+      int v=args._SYMBptr->feuille[0].val;
+      if (v==16 || v==10 || v==8 || v==2){
+	*logptr(contextptr) << "Integer format set to " << v << '\n';
+	integer_format(v,contextptr);
+	return vecteur(0);
+      }
+    }
     gen res=_solve_uncompressed(args,contextptr);
     if (res.type==_VECT){
       vecteur v=*res._VECTptr;
@@ -3029,7 +3051,7 @@ namespace giac {
   define_unary_function_ptr5( at_realproot ,alias_at_realproot,&__realproot,0,true);
 
   // bisection solver on a0,b0 with a sign reversal inside
-  static vecteur bisection_solver_sr(const gen & equation,const gen & var,const gen & a0,const gen &b0,int & iszero,double faorig,double fborig,GIAC_CONTEXT){
+  static vecteur bisection_solver_sr(const gen & equation,const gen & var,const gen & a0,const gen &b0,int & iszero,double faorig,double fborig,double eps,GIAC_CONTEXT){
     gen a=a0,b=b0;
     gen fa=subst(equation,var,a,false,contextptr);
     fa=eval(fa,1,contextptr);
@@ -3045,7 +3067,13 @@ namespace giac {
     }
     // sign change in [a,b]
     // number of steps
-    gen n=ln(abs(b-a,contextptr),contextptr)-ln(max(abs(b,contextptr),abs(a,contextptr),contextptr),contextptr)+53;
+    gen n;
+    n=ln(abs(b-a,contextptr),contextptr)-ln(max(abs(b,contextptr),abs(a,contextptr),contextptr),contextptr)+53;
+    if (eps>0 && eps<1){ // solve (b-a)/2^n<eps 2^n>(b-a)/eps
+      gen N=ln(abs((b-a)/eps,contextptr),contextptr);
+      if (is_greater(n,N,contextptr))
+	n=N;
+    }    
     n=_floor(n/0.69,contextptr);
     for (int i=0;i<n.val;i++){
       gen c=(a+b)/2,fc;
@@ -3092,12 +3120,7 @@ namespace giac {
     return vecteur(1,(a+b)/2);
   }
 
-  // also sets iszero to -2 if endpoints have same sign, -1 if err or undef
-  // 1 if zero found, 2 if sign reversal (no undef),
-  // set iszero to 0 on entry if only one root
-  // set to -1 or positive if you want many sign reversals 
-  // -1 means no step specified, positive means nstep specified
-  vecteur bisection_solver(const gen & equation,const gen & var,const gen & a0,const gen &b0,int & iszero,GIAC_CONTEXT){
+  vecteur bisection_solver(const gen & equation,const gen & var,const gen & a0,const gen &b0,int & iszero,double eps,GIAC_CONTEXT){
     bool onlyone=iszero==0;
     int nstep=gnuplot_pixels_per_eval;
     if (iszero>0)
@@ -3220,7 +3243,7 @@ namespace giac {
 	  return vecteur(0);
 	}
       }
-      return bisection_solver_sr(equation,var,a,b,iszero,faorig,fborig,contextptr);
+      return bisection_solver_sr(equation,var,a,b,iszero,faorig,fborig,eps,contextptr);
     }
     // we are searching many zeros in this interval, cutting it in small intervals
     // and searching a sign reversal in each
@@ -3246,12 +3269,21 @@ namespace giac {
       }
       if (fa._DOUBLE_val*fb._DOUBLE_val>0)
 	continue;
-      vecteur addres=bisection_solver_sr(equation,var,a,b,iszero,faorig,fborig,contextptr);
+      vecteur addres=bisection_solver_sr(equation,var,a,b,iszero,faorig,fborig,eps,contextptr);
       if (iszero==1)
 	res=mergevecteur(res,addres);
     }
     comprim(res);
     return res;
+  }
+
+  // also sets iszero to -2 if endpoints have same sign, -1 if err or undef
+  // 1 if zero found, 2 if sign reversal (no undef),
+  // set iszero to 0 on entry if only one root
+  // set to -1 or positive if you want many sign reversals 
+  // -1 means no step specified, positive means nstep specified
+  vecteur bisection_solver(const gen & equation,const gen & var,const gen & a0,const gen &b0,int & iszero,GIAC_CONTEXT){
+    return bisection_solver(equation,var,a0,b0,iszero,0.0,contextptr);
   }
 
   static void set_nearest_first(const gen & guess,vecteur & res,GIAC_CONTEXT){
@@ -3854,7 +3886,12 @@ namespace giac {
     if (s==2 && v[1].type==_IDNT){ 
       // no initial guess, check for poly-like equation
       vecteur lv(lvar(v0));
-      lv=lvar(evalf(lv,1,contextptr));
+      if (contextptr && contextptr->quoted_global_vars){
+	contextptr->quoted_global_vars->push_back(lv[1]);
+	lv=lvar(evalf(lv,1,contextptr)); // this should not evalf v[1], otherwise x:=10; solve(x^(3/2)=3.,x); will fail
+	contextptr->quoted_global_vars->pop_back();
+      } else
+	lv=lvar(evalf(lv,1,contextptr)); 
       int lvs=int(lv.size());
       bool poly=true;
       for (unsigned i=0;i<lv.size();++i){
@@ -3985,7 +4022,17 @@ namespace giac {
 	    iszero=v30.val;
 	}
       }
-      return bisection_solver(v0,v[1],a,b,iszero,contextptr);
+      // optional tolerance parameter for bisection
+      double eps=0;
+      if (s>3){
+	for (int i=3;i<s;++i){
+	  if (v[i].type==_DOUBLE_ && v[i]._DOUBLE_val<1 && v[i]._DOUBLE_val>0){
+	    eps=v[i]._DOUBLE_val;
+	    break;
+	  }
+	}
+      }
+      return bisection_solver(v0,v[1],a,b,iszero,eps,contextptr);
     }
     if (gguess.type==_VECT && gguess._VECTptr->size()>1){
       for (unsigned i=0;i<gguess._VECTptr->size();++i){
@@ -6168,7 +6215,11 @@ namespace giac {
       gbasis_param.eliminate_flag=false;
       if (!giac_gbasis(resrev,_REVLEX_ORDER,env,modularcheck,rur,contextptr,gbasis_param))
 	return false;
-      if (resrev.size()==1 || (is_zero_dim(resrev) && fglm_lex(resrev,reslex,1024,env,context0))){
+      if (resrev.size()==1){
+	reslex.swap(resrev);
+	return true;
+      }
+      if (is_zero_dim(resrev) && fglm_lex(resrev,reslex,1024,env,context0)){
 	reslex.swap(res);
 	return true;
       }
@@ -7090,7 +7141,7 @@ namespace giac {
 	  const_iterateur xt=xsol.begin(),xtend=xsol.end();
 	  for (;xt!=xtend;++xt){
 	    // current[xpos]=*xt;
-	    if (is_inequation(*xt)){ // FIXME is_inequation
+	    if (is_inequation(*xt) || xt->is_symb_of_sommet(at_and) || xt->is_symb_of_sommet(at_ou)){ // FIXME is_inequation
 	      gen id=lidnt(*xt);
 	      if (id.type==_VECT && id._VECTptr->size()==1){
 		id=id._VECTptr->front();
@@ -7761,6 +7812,10 @@ namespace giac {
 	    eqs.erase(eqs.begin()+i);
 	    for (unsigned k=0;k<eqs.size();++k){
 	      eqs[k]=_numer(subst(eqs[k],elim[j],elimj,false,contextptr),contextptr);
+	      if (is_zero(eqs[k])){
+		eqs.erase(eqs.begin()+k);
+		--k;
+	      }
 	    }
 	    elim.erase(elim.begin()+j);
 	    gen res=_eliminate(makesequence(eqs,elim,symb_equal(at_irem,modular),symb_equal(at_eliminate,gbasis_param.eliminate_flag)),contextptr);
