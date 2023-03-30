@@ -35,7 +35,7 @@
 #if defined VISUALC || defined BESTA_OS || defined FREERTOS
 typedef long pid_t;
 #else // VISUALC
-#if !defined(__MINGW_H) && !defined(NSPIRE) && !defined(FXCG) && !defined(__ANDROID__) && !defined(NSPIRE_NEWLIB) && !defined(OSX) && !defined(IOS) && !defined(OSXIOS) && !defined(FIR_LINUX) && !defined(PRIMEWEBASM)
+#if !defined(__MINGW_H) && !defined(HP39) && !defined(NSPIRE) && !defined(FXCG) && !defined(__ANDROID__) && !defined(NSPIRE_NEWLIB) && !defined(OSX) && !defined(IOS) && !defined(OSXIOS) && !defined(FIR_LINUX) && !defined(PRIMEWEBASM)
 #include "wince_replacements.h"
 #endif
 #ifdef __MINGW_H
@@ -585,6 +585,7 @@ throw(std::runtime_error("Stopped by user interruption.")); \
     size_t stacksize;
     void * stackaddr;
 #endif
+    size_t stack;
     thread_param();
   };
 
@@ -816,6 +817,7 @@ throw(std::runtime_error("Stopped by user interruption.")); \
 
   context * clone_context(const context *);
   void init_context(context * ptr);
+  void clear_context(context * ptr);
 
   extern const context * context0;
   std::vector<context *> & context_list();

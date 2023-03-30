@@ -64,7 +64,7 @@ using namespace std;
 #include "csturm.h"
 #include "sparse.h"
 #if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS
-inline bool is_graphe(const giac::gen &g,std::string &disp_out,const giac::context *){ return false; }
+inline bool is_graphe(const giac::gen &g){ return false; }
 #else
 #include "graphtheory.h"
 #endif
@@ -104,114 +104,56 @@ extern "C" uint32_t mainThreadStack[];
 namespace giac {
 #endif // ndef NO_NAMESPACE_GIAC
 
-#ifdef FXCG
+#if defined FXCG || defined HP39
 #define ALLOCSMALL
 #endif
 
 #ifdef ALLOCSMALL
 
   // 32 bytes structure: 4096/32=128 slots of memory
-  struct eight_int {
-    int i1,i2,i3,i4,i5,i6,i7,i8;
-  };
-  
-  struct eleven_int {
-    int i1,i2,i3,i4,i5,i6,i7,i8,i9,i10,i11;
-  };
-  
-  struct six_int {
-    int i1,i2,i3,i4,i5,i6
-#ifdef FXCG
-      ,i7,i8
-#endif
-      ;
-  };
-  
-  struct four_int {
-    int i1,i2,i3,i4;
-  };
-
   // ALLOCA  constants must be multiples of 2*32
-#if 0 // def FXCG
-  const int ALLOC24=10*32;
-  const int ALLOC32=8*32;
-  const int ALLOC16=8*32;
-  static unsigned int freeslot24[ALLOC24/32]={
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 
-  };
-  static unsigned int freeslot16[ALLOC16/32]={
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff,
-    //0xffffffff, 0xffffffff
-  };
-  static unsigned int freeslot32[ALLOC32/32]={
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff,
-    //0xffffffff, 0xffffffff
-  };
-  // does not work after OFF/ON
-  static four_int * tab16=(four_int *) 0xe5200000; 
-  static six_int * tab24=(six_int *) 0xe5007000;
-  static eight_int * tab32=(eight_int *) 0xe5017000;
-#else
-  const int ALLOC24=32*32;
-  const int ALLOC32=28*32;
-  const int ALLOC16=32*32;
-  //#define ALLOC44 16*32
+  const int ALLOC16=8*32; // symbolic
+  const int ALLOC24=16*32; // complex, identificateur, mpz_t
+  // #define ALLOC32 3*32 // not used
+  // unsigned os_python_heap=0x88068000; // free memory area, used by Python heap
+  #define ALLOC48 8*32 // eqw, comment this line if memory crash in eqw
   static unsigned int freeslot24[ALLOC24/32]={
     0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
     0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
     0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+    0xffffffff, 0xffffffff,0xffffffff, 0xffffffff, 
   };
   static unsigned int freeslot16[ALLOC16/32]={
     0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
     0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+    //0xffffffff, 0xffffffff
   };
+#ifdef ALLOC32
   static unsigned int freeslot32[ALLOC32/32]={
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    //0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+    0xffffffff, 0xffffffff, 0xffffffff,
+    //0xffffffff,0xffffffff, 0xffffffff,0xffffffff, 0xffffffff,
+    //0xffffffff, 0xffffffff
   };
-#ifdef ALLOC44
-  static unsigned int freeslot44[ALLOC44/32]={
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    //0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    //0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    //0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-    //0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+  eight_int * tab32;
+#endif
+#ifdef ALLOC48
+  static unsigned int freeslot48[ALLOC48/32]={
+    0xffffffff, 0xffffffff,
+    0xffffffff, 0xffffffff,
+    0xffffffff, 0xffffffff,0xffffffff, 0xffffffff,
   };
-  static eleven_int tab44[ALLOC44];
+  // static twelve_int tab48[ALLOC48];
+  twelve_int * tab48=0;
 #endif
 
-  static eight_int tab32[ALLOC32];
+#if 0 // alloc in static area
   static six_int tab24[ALLOC24];
   static four_int tab16[ALLOC16];
+#else // alloc in main.cc
+  four_int * tab16=0;
+  six_int * tab24=0;
 #endif
-
+  
   
   unsigned freeslotpos(unsigned n){
     unsigned r=1;
@@ -237,24 +179,24 @@ namespace giac {
   
   static void* allocfast(size_t size){
     int i,pos;
-    if (size==24){ 
+    if (tab24 && size==24){ 
       for (i=0;i<ALLOC24/32;){
-	if (!(freeslot24[i] || freeslot24[i+1])){
-	  i+=2;
-	  continue;
-	}
-	if (freeslot24[i]){
-	  pos=freeslotpos(freeslot24[i]);
-	  freeslot24[i] &= ~(1<<pos);
-	  return (void *) (tab24+i*32+pos);
-	}
-	i++;
-	pos=freeslotpos(freeslot24[i]);
-	freeslot24[i] &= ~(1<<pos);
-	return (void *) (tab24+i*32+pos);
+        if (!(freeslot24[i] || freeslot24[i+1])){
+          i+=2;
+          continue;
+        }
+        if (freeslot24[i]){
+          pos=freeslotpos(freeslot24[i]);
+          freeslot24[i] &= ~(1<<pos);
+          return (void *) (tab24+i*32+pos);
+        }
+        i++;
+        pos=freeslotpos(freeslot24[i]);
+        freeslot24[i] &= ~(1<<pos);
+        return (void *) (tab24+i*32+pos);
       }
     }
-    if (size==16){ 
+    if (tab16 && size==16){ 
       for (i=0;i<ALLOC16/32;){
 	if (!(freeslot16[i] || freeslot16[i+1])){
 	  i+=2;
@@ -271,7 +213,8 @@ namespace giac {
 	return (void *) (tab16+i*32+pos);
       }
     }
-    if (size==32){ 
+#ifdef ALLOC32
+    if (tab32 && size==32){ 
       for (i=0;i<ALLOC32/32;){
 	if (!(freeslot32[i] || freeslot32[i+1])){
 	  i+=2;
@@ -288,22 +231,23 @@ namespace giac {
 	return (void *) (tab32+i*32+pos);
       }
     }
-#ifdef ALLOC44
-    if (size==44){ 
-      for (i=0;i<ALLOC44/32;){
-	if (!(freeslot44[i] || freeslot44[i+1])){
+#endif
+#ifdef ALLOC48
+    if (tab48 && size==48){ 
+      for (i=0;i<ALLOC48/32;){
+	if (!(freeslot48[i] || freeslot48[i+1])){
 	  i+=2;
 	  continue;
 	}
-	if (freeslot44[i]){
-	  pos=freeslotpos(freeslot44[i]);
-	  freeslot44[i] &= ~(1<<pos);
-	  return (void *) (tab44+i*32+pos);
+	if (freeslot48[i]){
+	  pos=freeslotpos(freeslot48[i]);
+	  freeslot48[i] &= ~(1<<pos);
+	  return (void *) (tab48+i*32+pos);
 	}
 	++i;
-	pos=freeslotpos(freeslot44[i]);
-	freeslot44[i] &= ~(1<<pos);
-	return (void *) (tab44+i*32+pos);
+	pos=freeslotpos(freeslot48[i]);
+	freeslot48[i] &= ~(1<<pos);
+	return (void *) (tab48+i*32+pos);
       }
     }
 #endif
@@ -331,22 +275,24 @@ namespace giac {
       freeslot16[pos/32] |= (1 << (pos%32)); 
       return;
     }
-#ifdef ALLOC44
-    if ( ((size_t)obj>=(size_t) &tab44[0] ) &&
-	 ((size_t)obj<(size_t) &tab44[ALLOC44] ) ){
+#ifdef ALLOC48
+    if ( ((size_t)obj>=(size_t) &tab48[0] ) &&
+	 ((size_t)obj<(size_t) &tab48[ALLOC48] ) ){
       * (unsigned *) obj= 0;
-      int pos= ((size_t)obj -((size_t) &tab44[0]))/sizeof(eleven_int);
-      freeslot44[pos/32] |= (1 << (pos%32)); 
+      int pos= ((size_t)obj -((size_t) &tab48[0]))/sizeof(twelve_int);
+      freeslot48[pos/32] |= (1 << (pos%32)); 
       return;
     }
 #endif
+#ifdef ALLOC32
     if ( ((size_t)obj>=(size_t) &tab32[0]) &&
 	 ((size_t)obj<(size_t) &tab32[ALLOC32]) ){
       int pos= ((size_t)obj -((size_t) &tab32[0]))/sizeof(eight_int);
-      freeslot32[pos/32] |= (1 << (pos%32)); 
+      freeslot32[pos/32] |= (1 << (pos%32));
+      return;
     }
-    else
-      free(obj);
+#endif
+    free(obj);
   }
   unsigned hamdist(unsigned val){
     size_t res=0;
@@ -365,12 +311,16 @@ namespace giac {
     for (int i=0;i<ALLOC24/32;++i){
       res += 24*hamdist(freeslot24[i]);
     }
+#ifdef ALLOC32
     for (int i=0;i<ALLOC32/32;++i){
       res += 32*hamdist(freeslot32[i]);
     }
-    for (int i=0;i<ALLOC44/32;++i){
-      res += 44*hamdist(freeslot44[i]);
+#endif
+#ifdef ALLOC48
+    for (int i=0;i<ALLOC48/32;++i){
+      res += 48*hamdist(freeslot48[i]);
     }
+#endif
     return res;
   }
 #else // ALLOCSMALL
@@ -378,6 +328,7 @@ namespace giac {
     return 0;
   }
 #endif // ALLOCSMALL
+
 
 
 #if defined(SMARTPTR64) || !defined(ALLOCSMALL)
@@ -2343,10 +2294,10 @@ namespace giac {
 #ifdef TIMEOUT
     control_c();
 #endif
-    if (ctrl_c || interrupted) { 
+    if (ctrl_c || interrupted || !stack_check(contextptr)) { 
       interrupted = true; ctrl_c=false;
       *logptr(contextptr) << "Stopped in in_eval" << '\n';
-      gensizeerr(gettext("Stopped by user interruption."),evaled);
+      gensizeerr(gettext("Stopped by user interruption or stack overflow."),evaled);
       return true;
     }    
     if (!level)
@@ -3384,6 +3335,8 @@ namespace giac {
       return makemod(_MODptr->conj(contextptr),*(_MODptr+1));
     case _EXT:
       return algebraic_EXTension(_EXTptr->conj(contextptr),*(_EXTptr+1));
+    case _POLY:
+      return apply(*_POLYptr,contextptr,giac_conj);
     default: 
       return gentypeerr(gettext("Conj"));
     }
@@ -4238,11 +4191,13 @@ namespace giac {
         }
 #endif
       if (a.subtype==3){
-	gen * aptr=a._CPLXptr;
-	double ar=aptr->_DOUBLE_val,ai=(aptr+1)->_DOUBLE_val;
-	double z=std::abs(ar)+std::abs(ai); ar/=z; ai/=z;
-	return z*std::sqrt(ar*ar+ai*ai);
-	// return gen(std::sqrt(ar*ar+ai*ai));
+        gen * aptr=a._CPLXptr;
+        double ar=aptr->_DOUBLE_val,ai=(aptr+1)->_DOUBLE_val;
+        double z=std::abs(ar)+std::abs(ai);
+        if (z==0) return z;
+        ar/=z; ai/=z;
+        return z*std::sqrt(ar*ar+ai*ai);
+        // return gen(std::sqrt(ar*ar+ai*ai));
       }
       return sqrt(sq(*a._CPLXptr)+sq(*(a._CPLXptr+1)),contextptr) ;
     case _DOUBLE_:
@@ -9723,9 +9678,9 @@ namespace giac {
 	return _SYMBptr->sommet(f(i,contextptr),contextptr);
       vecteur lid(lidnt(*this));
       if (lid.size()==1 && !has_algebraic_program(*this)){
-	if (lid.front()==vx_var)
+	if (lid.front()==vx_var || lid.front()==t__IDNT_e || lid.front()==x__IDNT_e)
 	// suspect something like P:=x^3+1 then P(2)
-	  *logptr(contextptr) << "Warning, evaluating univariate expression of x(value) like if expression was a function.\nYou should write subst(" << *this << "," << lid.front() << "," << i << ")" << '\n';
+	  *logptr(contextptr) << "Warning, evaluating univariate expression like if expression was a function.\nYou should write subst(" << *this << "," << lid.front() << "," << i << ")" << '\n';
 	else
 	  return gensizeerr("Expression used like a function "+this->print(contextptr)+"\nYou should write subst("+this->print(contextptr)+","+lid.front().print(contextptr)+","+i.print(contextptr)+")");
 	return subst(*this,lid.front(),i,false,contextptr);
@@ -9806,6 +9761,8 @@ namespace giac {
     else {
       if (has_inf_or_undef(i))
 	return undef;
+      if (*this==x__IDNT_e || *this==t__IDNT_e)
+	return i;
       return symb_of(*this,i);
     }
   }
@@ -14448,7 +14405,7 @@ void sprint_double(char * s,double d){
     case _VECT:
       if (subtype==_GRAPH__VECT){
 	string s;
-	if (is_graphe(*this,s,contextptr))
+	if (is_graphe(*this))
 	  return '"'+s+'"';
       }
       return print_VECT(*_VECTptr,subtype,contextptr);
@@ -16576,6 +16533,35 @@ void sprint_double(char * s,double d){
   extern logo_turtle * turtleptr;
   gen _efface_logo(const gen & g,GIAC_CONTEXT);
 #endif
+
+  size_t max_stack_size=0,init_stack_ptr=0;
+  void stack_check_init(size_t s){
+    max_stack_size=s;
+    int dummy;
+    init_stack_ptr=(size_t) &dummy;
+  }
+
+  bool stack_check(GIAC_CONTEXT){
+    if (max_stack_size==0) // not initialized, no check
+      return true;
+    int dummy;
+    size_t cur=(size_t) &dummy;
+    size_t limit=(size_t) thread_param_ptr(contextptr)->stack;
+    if (limit==0)
+      limit=init_stack_ptr;
+    if (limit==0) // not initialized, no check
+      return true;
+    if (cur<=limit){
+      size_t d=limit-cur;
+      // CERR << d << '\n';
+      if (d<max_stack_size)
+	return true;
+      *logptr(contextptr) << "Stack overflow\n";
+      return false;
+    }
+    // should not occur, stack addr decreases
+    return cur-limit<max_stack_size;
+  }
       
   const char * caseval(const char *s){
     //printf("%s\n",s);
@@ -16860,7 +16846,7 @@ void sprint_double(char * s,double d){
 #ifdef KHICAS // replace ],[ by ][
       if (last.is_symb_of_sommet(at_pnt)){
 	if (os_shell || nspirelua)
-	  xcas::displaygraph(g,&C);
+	  xcas::displaygraph(g,gp,&C);
 	S="Graphic_object";
       }
       else {

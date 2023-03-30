@@ -2235,6 +2235,12 @@ namespace giac {
       return undef;
     int d=int(f._VECTptr->size());
     gen r=evalf_double(pp,1,contextptr);
+#ifdef HAVE_LIBMPFR
+    if (is_undef(r))
+      r=accurate_evalf(pp,256);
+#endif
+    if (is_undef(r))
+      *logptr(contextptr) << "Unable to eval numerically, root choice may be wrong\n";
     matrice m(d);
     m[0]=vecteur(d-1);
     m[0]._VECTptr->back()=1;
@@ -2275,10 +2281,12 @@ namespace giac {
 	identificateur x(" x");
 	vecteur w;
 	in_solve(symb_horner(mk,x),x,w,1,contextptr);
-	if (r.type!=_DOUBLE_ && r.type!=_CPLX && !w.empty()) return w.front();
+	if (r.type!=_DOUBLE_ && r.type!=_CPLX && r.type!=_REAL && !w.empty()) return w.front();
 	for (unsigned k=0;k<w.size();++k){
 	  if (lop(w[k],at_rootof).empty()){
 	    gen wkd=evalf_double(w[k],1,contextptr);
+      if (r.type==_REAL)
+        wkd=accurate_evalf(w[k],256);
 	    if (wkd!=w[k] && is_greater(1e-6,abs(1-r/wkd,contextptr),contextptr))
 	      return w[k];
 	  }
@@ -3131,6 +3139,8 @@ namespace giac {
     if (g.type==_FUNC)
       return 1;
     if (g.type==_VECT){
+      if (g.subtype==_PNT__VECT)
+	return 0;
       const_iterateur it=g._VECTptr->begin(),itend=g._VECTptr->end();
       for (;it!=itend;++it){
 	if (it->type==_STRNG)
@@ -4096,6 +4106,11 @@ namespace giac {
       }
     }
     if (v[0].type==_VECT && v[1].type==_VECT){ 
+#ifdef FXCG
+	gen res;
+	subresultant(*v[0]._VECTptr,*v[1]._VECTptr,res);
+	return res;
+#else
       gen g1,g2;
       int t1=coefftype(*v[0]._VECTptr,g1),t2=coefftype(*v[1]._VECTptr,g2);
       double eps=epsilon(contextptr);
@@ -4119,7 +4134,7 @@ namespace giac {
 	  vecteur2vector_int(B,m.val,b);
 	  return makemod(resultant_int(a,b,tmp1,tmp2,m.val),m);
 	}
-#if defined INT128 && !defined USE_GMP_REPLACEMENTS && !defined BF2GMP_H
+#if defined INT128 && !defined USE_GMP_REPLACEMENTS && !defined BF2GMP_H 
 	if (m.type==_ZINT && sizeinbase2(m)<61){
 	  longlong p=mpz_get_si(*m._ZINTptr);
 	  int n=giacmax(A.size(),B.size());
@@ -4134,6 +4149,7 @@ namespace giac {
 #endif
 	return makemod(mod_resultant(A,B,eps),m);
       }
+#endif // FXCG
       // not very efficient...
       gen g(identificateur("tresultant"));
       v[0]=_poly2symb(makesequence(v[0],g),contextptr);

@@ -264,7 +264,7 @@ namespace giac {
   // between xmin/xmax or including xmin/xmax (if bounds is true)
   vecteur ticks(double xmin,double xmax,bool bounds);
   gen plotcontour(const gen & f0,bool contour,GIAC_CONTEXT);
-  gen plot_array(const std::vector< std::vector< double> > & fij,int imax,int jmax,double xmin,double xmax,double dx,double ymin,double ymax,double dy,const vecteur & lz,const vecteur & attributs,bool contour,GIAC_CONTEXT);
+  gen plot_array(const std::vector< std::vector< double> > & fij,int imax,int jmax,double xmin,double xmax,double dx,double ymin,double ymax,double dy,const vecteur & lz,const vecteur & attributs,bool contour,int pal,GIAC_CONTEXT);
   bool latex_replot(FILE * stream,const std::string & s);
   bool png_replot(int i);
   bool png_replot(const std::string & s);
@@ -829,6 +829,18 @@ namespace giac {
   extern const unary_function_ptr * const  notexprint_plot_sommets;
   extern const unary_function_ptr * const  implicittex_plot_sommets;
 #endif
+
+// colormap support, addition by L.Marohnić
+bool is_colormap_index(int pal);
+bool is_colormap_cyclic(int pal);
+int colormap_color(int pal,double t,GIAC_CONTEXT=context0);
+bool colormap_color_rgb(int pal,double t,int &c,int &r,int &g,int &b,GIAC_CONTEXT=context0);
+gen _colormap(const gen &g,GIAC_CONTEXT);
+extern const unary_function_ptr * const at_colormap;
+void rgb2xyz(double R,double G,double B,double &x,double &y,double &z);
+void xyz2rgb(double x,double y,double z,double &R,double &G,double &B);
+void blend(unsigned char r1,unsigned char g1,unsigned char b1,unsigned char r2,unsigned char g2,unsigned char b2,double t,unsigned char &r,unsigned char &g,unsigned char &b);
+gen _bezier(const gen & args,GIAC_CONTEXT);
 
 #ifndef NO_NAMESPACE_GIAC
 } // namespace giac

@@ -7,6 +7,18 @@
 #include "misc.h"
 
 #include <exception>
+
+#if defined TICE && !defined std
+#define std ustl
+#endif
+#if defined FX || defined FXCG
+typedef unsigned char Char;
+#else
+typedef char Char;
+#endif
+
+extern bool xthetat;
+
 #ifdef NUMWORKS
 extern char * freeptr;
 extern const char * flash_buf;
@@ -20,10 +32,19 @@ class autoshutdown : public std::exception{
   }
 };
 
+#ifndef LCD_WIDTH_PX
 extern  const int LCD_WIDTH_PX;
 extern   const int LCD_HEIGHT_PX;
+#endif
+
 extern char* fmenu_cfg;
-#define color_gris 57083
+#ifdef HP39
+#define color_gris 0
+#define MENUHEIGHT 8
+#else
+#define color_gris 46491
+#define MENUHEIGHT 12
+#endif
 #define STATUS_AREA_PX 0 // 24
 #define GIAC_HISTORY_MAX_TAILLE 32
 #define GIAC_HISTORY_SIZE 2
@@ -74,6 +95,8 @@ extern "C" {
   double r_det(double *,int);
   struct double_pair {
     double r,i;
+    double_pair operator +=(const double_pair &);
+    double_pair operator -=(const double_pair &);
   } ;
   typedef struct double_pair c_complex;
   bool matrice2c_complexptr(const giac::matrice &M,c_complex *x);
@@ -98,25 +121,48 @@ extern "C" {
   void c_turtle_up(int i);
   void c_turtle_goto(double x,double y);
   void c_turtle_cap(double x);
-  void c_turtle_crayon(int i);
+  int c_turtle_crayon(int i);
   void c_turtle_rond(int x,int y,int z);
   void c_turtle_disque(int x,int y,int z,int centered);
   void c_turtle_fill(int i);
   void c_turtle_fillcolor(double r,double g,double b,int entier);
   void c_turtle_getposition(double * x,double * y);
+  void c_turtle_clear(int clrpos);
+  void c_turtle_show(int visible);
+  int c_turtle_getcap();
+  void c_turtle_towards(double x,double y);
+  int c_turtle_getcolor();
+  void c_turtle_color(int);
+  void c_turtle_fillcolor1(int c);
+  extern int shell_x,shell_y,shell_fontw,shell_fonth; 
+  
 }
 extern int lang;
 extern short int nspirelua;
 extern bool warn_nr;
+
 int select_interpreter(); // 0 Xcas, 1|2 Xcas python_compat(1|2), 3 MicroPython, 4 QuickJS 
 const char * gettext(const char * s) ;
+#ifdef HP39
+int kcas_main(int isAppli, unsigned short OptionNum);
+extern giac::context * contextptr; 
+#endif
+
+#ifdef BW
+int get_free_memory();
+int PrintMini(int x,int y,const char * s,int mode);
+#endif
 
 #ifndef NO_NAMESPACE_XCAS
 namespace xcas {
 #endif // ndef NO_NAMESPACE_XCAS
   void set_exam_mode(int i,const giac::context *);
   int giac_filebrowser(char * filename,const char * extension,const char * title,int storage=0);
+#ifdef BW
+  inline void draw_rectangle(int x,int y,int w,int h,int c){os_fill_rect(x,y,w,h,c);}
+#else
   void draw_rectangle(int x,int y,int w,int h,int c);
+#endif
   void draw_line(int x0,int y0,int x1,int y1,int c);
   void draw_circle(int xc,int yc,int r,int color,bool q1=true,bool q2=true,bool q3=true,bool q4=true);
   void draw_filled_circle(int xc,int yc,int r,int color,bool left=true,bool right=true);
@@ -138,6 +184,7 @@ namespace xcas {
   void Equation_select(giac::gen & eql,bool select);
   int eqw_select_down(giac::gen & g);
   int eqw_select_up(giac::gen & g);
+  giac::gen Equation_copy(const giac::gen & g);
 
   giac::gen Equation_compute_size(const giac::gen & g,const giac::attributs & a,int windowhsize,const giac::context * contextptr);
   giac::eqwdata Equation_total_size(const giac::gen & g);  
@@ -168,7 +215,7 @@ namespace xcas {
   typedef struct
   {
     std::string s;
-    color_t color=giac::_BLACK;
+    color_t color=::giac::_BLACK;
     short int newLine=0; // if 1, new line will be drawn before the text
     short int spaceAtEnd=0;
     short int lineSpacing=0;
@@ -191,7 +238,7 @@ namespace xcas {
     int lineHeight=17;
     std::vector<textElement> elements,undoelements;
     const char* title = NULL;
-    std::string filename;
+    std::string filename; 
     int scrollbar=1;
     bool allowEXE=false; //whether to allow EXE to exit the screen
     bool allowF1=false; //whether to allow F1 to exit the screen
@@ -288,6 +335,9 @@ namespace xcas {
     int display_mode,show_axes,show_edges,show_names,labelsize,lcdz,default_upcolor,default_downcolor,default_downupcolor,default_downdowncolor;
     short int precision,diffusionz,diffusionz_limit;
     bool is3d,doprecise,hide2nd,interval,solid3d,must_redraw;
+    int tracemode;
+    // bit0=(x,y), bit1=tangent(x',y'), m=pente (ou singulier),
+    // bit2=normal(-y',x'), bit3=osculateur, R_courbure
     double Ai,Aj,Bi,Bj,Ci,Cj,Di,Dj,Ei,Ej,Fi,Fj,Gi,Gj,Hi,Hj; // visualization cube coordinates
     std::vector< std::vector< std::vector<float3d> > > surfacev;
     std::vector<double3> plan_pointv; // point in plan 
@@ -308,7 +358,7 @@ namespace xcas {
     std::vector<double3> pointv; 
     std::vector<const char *> points; // legende
     std::vector<int4> hyp_color,plan_color,sphere_color,polyedre_color,line_color,curve_color,point_color;
-    giac::gen g; // normal graph instructions
+    giac::gen g; // concatenation of plot_instructions, trace_instructions...
     const giac::context * contextptr;
     /* geometry data */
     double current_i,current_j;
@@ -339,7 +389,11 @@ namespace xcas {
     double push_depth,current_depth;
     int push_i,push_j,cursor_point_type; // position of mouse push/drag
     bool pushed=false,moving=false,moving_frame=false,in_area=true;
+    bool moving_param; double param_orig,param_value,param_min,param_max,param_step;
+    int nparams;
+    int tracemode_n; double tracemode_i; string tracemode_add; giac::vecteur tracemode_disp; double tracemode_mark;
     /* end geometry data */
+    giac::vecteur param(double d) const;
     void adjust_cursor_point_type();
     void autoname_plus_plus();
     void do_handle(const giac::gen & g);
@@ -348,12 +402,16 @@ namespace xcas {
     giac::gen geometry_round(double x,double y,double z,double eps,giac::gen & original,int & pos,bool selectfirstlevel=false,bool setscroller=false);
     giac::vecteur selection2vecteur(const std::vector<int> & v);
     void set_mode(const giac::gen & f_tmp,const giac::gen & f_final,int m,const std::string & help);
+    void invert_tracemode();
+    void tracemode_set(int operation=0); // operation==1 if user is setting the value of t on a parametric curve, operation==2 for root, operation==3 for extremum, operation==4 mark current position, operation=5 for area
     void add_entry(int pos);
     double find_eps() const;
     void find_xyz(double i,double j,double k,double & x,double & y,double & z) const;
     void set_gen_value(int n,const giac::gen & g,bool exec=true); // set n-th entry value
     int geo_handle(int event,int key);
     int ui();
+    void curve_infos();
+    void init_tracemode();
     giac::vecteur selected_names(bool allobjects,bool withdef) const;
     void find_title_plot(giac::gen & title_tmp,giac::gen & plot_tmp);
     void draw_decorations(const giac::gen & title_tmp);
@@ -366,8 +424,10 @@ namespace xcas {
     bool findij(const giac::gen & e0,double x_scale,double y_scale,double & i0,double & j0,const giac::context * ) const;
     void xyz2ij(const double3 & d,int &i,int &j) const; // d not transformed
     void xyz2ij(const double3 & d,double &i,double &j) const; // d not transformed
+    void xyz2ij(const double3 & d,double &i,double &j,double3 & d3) const; // d not transformed, d3 is
     void XYZ2ij(const double3 & d,int &i,int &j) const; // d is transformed
     void addpolyg(vector<int2> & polyg,double x,double y,double z,int2 & IJmin) const ;
+    void adddepth(vector<int2> & polyg,const double3 &A,const double3 &B,int2 & IJmin) const;
     void update_scales();
     void update();
     void update_rotation(); // update grot
@@ -404,14 +464,14 @@ namespace xcas {
   };
   
   int run(const char * s,int do_logo_graph_eqw,const giac::context * contextptr);
-  int displaygraph(const giac::gen & ge, const giac::context * contextptr);
+  int displaygraph(const giac::gen & ge, const giac::gen & gs,const giac::context * contextptr); // ge evaled, gs instruction
   int displaylogo();
   giac::gen eqw(const giac::gen & ge,bool editable,const giac::context * contextptr);
   void print(int &X,int&Y,const char * buf,int color,bool revert,bool fake,bool minimini);
 
   void save_session(const giac::context * );
 #if 1
-#define MAX_FILENAME_SIZE 63
+#define MAX_FILENAME_SIZE 270
   void save_console_state_smem(const char * filename,bool xwaspy,const giac::context *);
   bool load_console_state_smem(const char * filename,const giac::context *);
 
@@ -422,7 +482,6 @@ namespace xcas {
     int     bottom;
     unsigned char mode;
   } ;
-
 
   enum CONSOLE_RETURN_VAL {
 			   CONSOLE_NEW_LINE_SET = 1,
@@ -453,16 +512,25 @@ namespace xcas {
 		    UPPER_CASE
   };
 
-  enum CONSOLE_SCREEN_SPEC {
+  enum CONSOLE_SCREEN_SPEC
+    {			    
 #ifdef NSPIRE_NEWLIB
-			    _LINE_MAX = 128,
-			    COL_DISP_MAX = 32,
+     _LINE_MAX = 128,
+     COL_DISP_MAX = 32,
 #else
-			    _LINE_MAX = 48,
-			    COL_DISP_MAX = 30,//32
+     _LINE_MAX = 48,
+#ifdef NUMWORKS
+     COL_DISP_MAX = 30,//32
+#else // HP39
+     COL_DISP_MAX = 35,//21  //!!!!!!! 21     
 #endif
-			    LINE_DISP_MAX = 11,
-			    EDIT_LINE_MAX = 2048
+#endif
+#ifdef HP39
+     LINE_DISP_MAX = 7,      //!!!!!!!  7
+#else     
+     LINE_DISP_MAX = 11,
+#endif
+     EDIT_LINE_MAX = 2048,
   };
   
   struct console_line {
@@ -485,10 +553,16 @@ namespace xcas {
   };
 
 #define MAX_FMENU_ITEMS 8
+#ifdef HP39
+#define FMENU_TITLE_LENGHT 8
+#else
 #define FMENU_TITLE_LENGHT 4
-
+#endif
+  
 #define is_wchar(c) ((c == 0x7F) || (c == 0xF7) || (c == 0xF9) || (c == 0xE5) || (c == 0xE6) || (c == 0xE7))
+#ifndef HP39
 #define printf(s) Console_Output((const char *)s);
+#endif
 
   int Console_DelStr(char *str, int end_pos, int n);
   int Console_InsStr(char *dest, const char *src, int disp_pos);
@@ -514,7 +588,9 @@ namespace xcas {
   char* Console_GetEditLine();
   void dConsolePut(const char *);
   void dConsolePutChar(const char );
+#ifndef BW
   void dConsoleRedraw(void);
+#endif
   extern int dconsole_mode;
   extern int console_changed; // 1 if something new in history
   extern char session_filename[MAX_FILENAME_SIZE+1];
@@ -541,13 +617,22 @@ namespace xcas {
   void fix_sheet(tableur & t,const giac::context *);
   std::string print_tableur(const tableur & t,const giac::context *);
 
-  int check_do_graph(giac::gen & ge,int do_logo_graph_eqw,const giac::context *);
+  int check_do_graph(giac::gen & ge,const giac::gen & gs,int do_logo_graph_eqw,const giac::context *);
   int get_filename(char * filename,const char * extension);
   int find_color(const char * s,const giac::context *);
+  void geosave(textArea * text,const giac::context *);
+  int newgeo(const giac::context *);
+  void cleargeo();
+  int geoloop(Graph2d * geoptr);
+  bool geoparse(textArea *text,const giac::context *);
 
 #ifndef NO_NAMESPACE_XCAS
 } // namespace xcas
 #endif // ndef NO_NAMESPACE_XCAS
+
+#ifdef BW
+void dConsoleRedraw(void);
+#endif
 
 giac::gen sheet(const giac::context *); // in kadd.cc
 /* ************************************************************
@@ -578,12 +663,12 @@ namespace giac {
     int value:4=MENUITEM_VALUE_NONE; // value of the menu item. For example, if type is MENUITEM_CHECKBOX and the checkbox is checked, the value of this var will be MENUITEM_VALUE_CHECKED
     int isselected:4=0; // for file browsers and other multi-select screens, this will show an arrow before the item
     short int isfolder=0; // for file browsers, this will signal the item is a folder
-    signed char color=giac::_BLACK; // color of the menu item (use TEXT_COLOR_* to define)
+    signed char color=::giac::_BLACK; // color of the menu item (use TEXT_COLOR_* to define)
     // The following two settings require the menu type to be set to MENUTYPE_MULTISELECT
 #if 0
     signed char icon=-1; //for file browsers, to show a file icon. -1 shows no icon (default)
 #endif
-    MenuItem():token(0),type(MENUITEM_NORMAL),value(MENUITEM_VALUE_NONE),isselected(0),isfolder(0),color(giac::_BLACK) {}
+    MenuItem():token(0),type(MENUITEM_NORMAL),value(MENUITEM_VALUE_NONE),isselected(0),isfolder(0),color(::giac::_BLACK) {}
   } ;
 
   typedef struct
@@ -601,12 +686,16 @@ namespace giac {
     char* statusText = NULL; // text to be shown on the status bar, may be empty
     char* title = NULL; // title to be shown on the first line if not null
     char* subtitle = NULL;
-    int titleColor=giac::_BLUE; //color of the title
+    int titleColor=::giac::_BLUE; //color of the title
     char* nodatamsg; // message to show when there are no menu items to display
     int startX=1; //X where to start drawing the menu. NOTE this is not absolute pixel coordinates but rather character coordinates
     int startY=0; //Y where to start drawing the menu. NOTE this is not absolute pixel coordinates but rather character coordinates
     int width=30; // NOTE this is not absolute pixel coordinates but rather character coordinates
+#ifdef HP39
+    int height=8;
+#else
     int height=12; // NOTE this is not absolute pixel coordinates but rather character coordinates
+#endif
     int scrollbar=1; // 1 to show scrollbar, 0 to not show it.
     int scrollout=0; // whether the scrollbar goes out of the menu area (1) or it overlaps some of the menu area (0)
     int numitems; // number of items in menu
@@ -642,7 +731,7 @@ namespace giac {
   const char * keytostring(int key,int keyflag,bool py,const giac::context * contextptr);
   void insert(std::string & s,int pos,const char * add);
   
-  int showCatalog(char* insertText,int preselect,int menupos,const giac::context * contextptr);
+  int showCatalog(char* insertText,int preselect,int menupos=0,const giac::context * contextptr=0);
   int doMenu(Menu* menu, MenuItemIcon* icontable=NULL);
   void reset_alpha();
   // category=0 for CATALOG, 1 for OPTN
@@ -656,38 +745,48 @@ namespace giac {
 
   gen _efface_logo(const gen & g,GIAC_CONTEXT);
   gen turtle_state(const giac::context * contextptr);
-  int inputline(const char * msg1,const char * msg2,std::string & s,bool numeric,int ypos=65,const giac::context *contextptr=0);
+  int inputline(const char * msg1,const char * msg2,std::string & s,bool numeric,int ypos,const giac::context *contextptr);
   extern logo_turtle * turtleptr;
   bool inputdouble(const char * msg1,double & d,const giac::context *contextptr);
+#ifndef BW
   bool do_confirm(const char * s);
   int confirm(const char * msg1,const char * msg2,bool acexit=false,int y=40);
   bool confirm_overwrite();
   void invalid_varname();
+#endif
 
 #ifndef NO_NAMESPACE_XCAS
 } // namespace giac
 #endif // ndef NO_NAMESPACE_XCAS
 
-
-#define COLOR_BLACK giac::_BLACK
-#define COLOR_RED giac::_RED
-#define COLOR_GREEN giac::_GREEN
-#define COLOR_CYAN giac::_CYAN
-#define COLOR_BLUE giac::_BLUE
-#define COLOR_YELLOW giac::_YELLOW
-#define COLOR_MAGENTA giac::_MAGENTA
-#define COLOR_WHITE giac::_WHITE
+#ifndef BW
+#ifdef HP39
+#define COLOR_CYAN   90
+#define COLOR_RED    68
+#define COLOR_GREEN  68
+#define COLOR_WHITE  255
+#define COLOR_BLACK  0
+#else
+#define COLOR_BLACK ::giac::_BLACK
+#define COLOR_RED ::giac::_RED
+#define COLOR_GREEN ::giac::_GREEN
+#define COLOR_CYAN ::giac::_CYAN
+#define COLOR_WHITE ::giac::_WHITE
+#endif
+#define COLOR_BLUE ::giac::_BLUE
+#define COLOR_YELLOW ::giac::_YELLOW
+#define COLOR_MAGENTA ::giac::_MAGENTA
 #define COLOR_YELLOWDARK 64934
 #define COLOR_BROWN 65000
-#define TEXT_COLOR_BLACK giac::_BLACK
-#define TEXT_COLOR_RED giac::_RED
-#define TEXT_COLOR_GREEN giac::_GREEN
-#define TEXT_COLOR_CYAN giac::_CYAN
-#define TEXT_COLOR_BLUE giac::_BLUE
-#define TEXT_COLOR_YELLOW giac::_YELLOW
-#define TEXT_COLOR_WHITE giac::_WHITE
-#define TEXT_COLOR_MAGENTA giac::_MAGENTA
-
+#define TEXT_COLOR_BLACK ::giac::_BLACK
+#define TEXT_COLOR_RED ::giac::_RED
+#define TEXT_COLOR_GREEN ::giac::_GREEN
+#define TEXT_COLOR_CYAN ::giac::_CYAN
+#define TEXT_COLOR_BLUE ::giac::_BLUE
+#define TEXT_COLOR_YELLOW ::giac::_YELLOW
+#define TEXT_COLOR_WHITE ::giac::_WHITE
+#define TEXT_COLOR_MAGENTA ::giac::_MAGENTA
+#endif
 
 #endif // _KDISPLAY_H
 #endif

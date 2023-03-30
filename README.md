@@ -9,6 +9,10 @@ Team. It supports various ports of Giac, including a native version, a
 Java Native Interface DLL, a HTML/WebAssembly version, a node.js port,
 an Android and an iOS version.
 
+The repository also includes a NodeJS port (https://www.npmjs.com/package/giac) that is no longer actively updated.
+
+In case you want to share any feedback or bug reports please use [the Giac / XCAS forum](https://xcas.univ-grenoble-alpes.fr/forum/).
+
 ## Authors and contributors
 
 * Bernard Parisse (Institut Fourier, Grenoble, France)

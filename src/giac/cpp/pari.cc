@@ -40,6 +40,14 @@ using namespace std;
 
 #ifdef HAVE_LIBPARI
 
+#ifndef ANYARG
+#ifdef __cplusplus
+#  define ANYARG ...
+#else
+#  define ANYARG
+#endif
+#endif
+
 #ifdef HAVE_PTHREAD_H
 #include <pthread.h>
 #endif
@@ -168,7 +176,7 @@ namespace giac {
     long Gpl=lgefint(G)-2;
     // use one of the following code depending how pari codes long integers
     // Code 1
-#if !defined BF2GMP_H && !defined(__APPLE__) && !defined(WIN32) || defined(WIN64)
+#if defined MINGW || (!defined BF2GMP_H && !defined(__APPLE__) && !defined(WIN32) || defined(WIN64) )
     ref_mpz_t * mz = new ref_mpz_t;
     mpz_realloc2(mz->z,32*Gpl);
     mpz_import(mz->z,Gpl,-1,sizeof(GEN),0,0,&G[2]);
@@ -639,11 +647,16 @@ namespace giac {
     return vars_.empty()?res:gel(res,1+vars_.size());
   }
   GEN gen2GEN(const gen & e,const vecteur & vars,GIAC_CONTEXT){
+    const char * ptr=__pow.s;
+    __pow.s="^";
     cb_pari_err_recover=gp_err_recover;
     if (setjmp(env)){
+      __pow.s=ptr;
       setsizeerr(gettext("Error in PARI subsystem"));
     }
-    return ingen2GEN(e,vars,contextptr);
+    GEN G=ingen2GEN(e,vars,contextptr);
+    __pow.s=ptr;
+    return G;
   }
 
   gen pari_isprime(const gen & e,int certif){

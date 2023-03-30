@@ -3014,6 +3014,7 @@ extern "C" void Sleep(unsigned int miliSecond);
 			      ,eval_thread(0),stackaddr(0)
 #endif
 #endif
+    ,stack(0)
   { 
   }
 
@@ -5404,6 +5405,34 @@ NULL,NULL,SW_SHOWNORMAL);
     return ptr;
   }
 
+  void clear_context(context * ptr){
+    if (!ptr)
+      return;
+    ptr->parent=0;
+    if (ptr->history_in_ptr)
+      delete ptr->history_in_ptr;
+    if (ptr->history_out_ptr)
+      delete ptr->history_out_ptr;
+    if (ptr->history_plot_ptr)
+      delete ptr->history_plot_ptr;
+    if (ptr->quoted_global_vars)
+      delete ptr->quoted_global_vars;
+    if (ptr->rootofs)
+      delete ptr->rootofs;
+    if (ptr->globalptr)
+      delete ptr->globalptr;
+    if (ptr->tabptr)
+      delete ptr->tabptr;
+    ptr->tabptr=new sym_tab; 
+    ptr->globalcontextptr=ptr; ptr->previous=0; ptr->globalptr=new global; 
+    ptr->quoted_global_vars=new vecteur;
+    ptr->rootofs=new vecteur;
+    ptr->history_in_ptr=new vecteur;
+    ptr->history_out_ptr=new vecteur;
+    ptr->history_plot_ptr=new vecteur;
+    //init_context(ptr);
+  }
+
   void init_context(context * ptr){
     if (!ptr){
       CERR << "init_context on null context" << '\n';
@@ -5576,6 +5605,7 @@ NULL,NULL,SW_SHOWNORMAL);
     thread_param * ptr =thread_param_ptr(contextptr);
     pthread_attr_getstacksize(&ptr->attr,&ptr->stacksize);
     ptr->stackaddr=(void *) ((uintptr_t) &ptr-ptr->stacksize);
+    ptr->stack=(size_t) &ptr;
 #ifndef __MINGW_H
     struct tms tmp1,tmp2;
     times(&tmp1);
@@ -5602,7 +5632,7 @@ NULL,NULL,SW_SHOWNORMAL);
       last_evaled_argptr(contextptr)=NULL;
     }
 #endif
-    ptr->stackaddr=0;
+    ptr->stackaddr=0; ptr->stack=0;
     thread_eval_status(0,contextptr);
     pthread_exit(0);
     return 0;
