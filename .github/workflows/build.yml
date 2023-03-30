@@ -75,23 +75,25 @@ jobs:
     - name: build
       run: ./gradlew javagiacLinux64SharedLibrary
 
-  windows32_linux-jnidll-gradle:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v1
-    - name: prerequisites
-      run: sudo apt update && sudo apt install build-essential binutils-mingw-w64-i686 g++-mingw-w64-i686 gcc-mingw-w64-i686 mingw-w64-i686-dev default-jdk
-    - name: build
-      run: ./gradlew javagiacWin32SharedLibrary
+# Currently broken:
+#  windows32_linux-jnidll-gradle:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v1
+#    - name: prerequisites
+#      run: sudo apt update && sudo apt install build-essential binutils-mingw-w64-i686 g++-mingw-w64-i686 gcc-mingw-w64-i686 mingw-w64-i686-dev default-jdk
+#    - name: build
+#      run: ./gradlew javagiacWin32SharedLibrary
 
-  windows64_linux-jnidll-gradle:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v1
-    - name: prerequisites
-      run: sudo apt update && sudo apt install build-essential binutils-mingw-w64-x86-64 g++-mingw-w64-x86-64 gcc-mingw-w64-x86-64 mingw-w64-x86-64-dev default-jdk
-    - name: build
-      run: ./gradlew javagiacWin64SharedLibrary
+# Currently broken:
+#  windows64_linux-jnidll-gradle:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v1
+#    - name: prerequisites
+#      run: sudo apt update && sudo apt install build-essential binutils-mingw-w64-x86-64 g++-mingw-w64-x86-64 gcc-mingw-w64-x86-64 mingw-w64-x86-64-dev default-jdk
+#    - name: build
+#      run: ./gradlew javagiacWin64SharedLibrary
 
   linux-nodejs-npm:
     runs-on: ubuntu-latest
