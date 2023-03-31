@@ -157,4 +157,4 @@ jobs:
           -DgroupId=com.github -DartifactId=giac-gwt -Dversion=$CI_REF_NAME_SLUG
         mvn --batch-mode deploy:deploy-file -Durl=https://maven.pkg.github.com/kovzol/giac-1 \
           -DrepositoryId=github -Dfile=build/libs/giac-gwt-sources.jar \
-          -DgroupId=com.github -Dclassifier=sources -DartifactId=giac-gwt -Dversion=$CI_REF_NAME_SLUG
+          -DgroupId=com.github -DartifactId=giac-gwt-sources -Dversion=$CI_REF_NAME_SLUG
