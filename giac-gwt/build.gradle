@@ -7,8 +7,12 @@ apply from: '../repositories.gradle'
 
 dependencies {
     api 'org.gwtproject:gwt-dev:2.10.0',
-        'org.gwtproject.resources:gwt-resources-api:HEAD-SNAPSHOT'
+        'org.gwtproject.resources:gwt-resources-api:HEAD-SNAPSHOT',
+        // old version, FIXME
+        'com.google.gwt:gwt-dev:2.9.0',
+        'com.google.gwt:gwt-user:2.9.0'
     annotationProcessor 'org.gwtproject.resources:gwt-resources-processor:HEAD-SNAPSHOT'
+
 }
 
 compileJava.options.sourcepath = files(processResources.destinationDir).builtBy(processResources)
