@@ -123,3 +123,27 @@ jobs:
       run: |
         mvn --batch-mode deploy:deploy-file -Durl=https://maven.pkg.github.com/kovzol/giac-1 -DrepositoryId=github -Dfile=build/distributions/javagiac/javagiac-win64-natives-windows-amd64.jar -Dclassifier=natives-windows-amd64 -DgroupId=com.github -DartifactId=javagiac-win64 -Dversion=%CI_REF_NAME_SLUG%
       shell: cmd
+
+  linux-wasm-gradle:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: prerequisites
+      run: sudo apt update && sudo apt install git default-jdk
+    - name: build
+      run: |
+        git clone https://github.com/emscripten-core/emsdk.git
+        ./gradlew installEmsdk
+        cd emsdk
+        ln -s . emsdk-portable
+        mkdir emscripten
+        cd emscripten
+        ln -s ../upstream/emscripten latest
+        cd ../..
+        ./gradlew activateEmsdk createGiacWasmJs
+    - name: jars
+      run: |
+        cd giac-gwt
+        ../gradlew jar sourceJar
+        mvn --batch-mode deploy:deploy-file -Durl=https://maven.pkg.github.com/kovzol/giac-1 -DrepositoryId=github -Dfile=build/libs/giac-gwt.jar -DgroupId=com.github -DartifactId=giac-gwt -Dversion=%CI_REF_NAME_SLUG%
+        mvn --batch-mode deploy:deploy-file -Durl=https://maven.pkg.github.com/kovzol/giac-1 -DrepositoryId=github -Dfile=build/libs/giac-gwt-sources.jar -DgroupId=com.github -Dclassifier=sources -DartifactId=giac-gwt -Dversion=%CI_REF_NAME_SLUG%
