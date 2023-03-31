@@ -126,8 +126,15 @@ jobs:
 
   linux-wasm-gradle:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-    - uses: actions/checkout@v1
+    - uses: FranzDiebold/github-env-vars-action@v2
+    - uses: actions/checkout@v3
+    - uses: s4u/maven-settings-action@v2.6.0
+      with:
+        servers: '[{"id": "github", "configuration": {"httpHeaders": {"property": {"name": "Authorization","value": "Bearer ${{ secrets.GITHUB_TOKEN }}"}}}}]'
     - name: prerequisites
       run: sudo apt update && sudo apt install git default-jdk
     - name: build
