@@ -8,7 +8,7 @@
       # Common defines:
       "defines" : [
         "GIAC_GGB",
-        'VERSION="1.2.3"',
+        'VERSION="1.9.0"',
         "IN_GIAC",
         "HAVE_SYSCONF",
         "HAVE_NO_HOME_DIRECTORY",
