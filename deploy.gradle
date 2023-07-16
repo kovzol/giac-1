@@ -78,7 +78,7 @@ task javagiacMacJarLocal (dependsOn: 'javagiacOsx_amd64SharedLibrary', type: Jar
     description 'Creates the Mac .jar package for the Java Giac library.'
     baseName = 'javagiac-mac'
     destinationDir = javagiacDir
-    from "${buildDir}/binaries/javagiacSharedLibrary/osx_amd64" // FIXME: unify
+    from "${buildDir}/binaries/javagiacSharedLibrary/osx_x86-64" // FIXME: unify
     include '*.jnilib'
     classifier 'natives-macosx-universal'
 }
