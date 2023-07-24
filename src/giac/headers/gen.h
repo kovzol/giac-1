@@ -910,7 +910,7 @@ namespace giac {
   struct alias_ref_fraction { ref_count_t ref_count; alias_gen num; alias_gen den; };
   struct alias_ref_complex {
     ref_count_t ref_count;
-#ifdef BIGENDIAN
+#if defined BIGENDIAN //&& !defined __VISUALC__
     alias_gen im,re;
     int display;
 #else
@@ -1742,6 +1742,7 @@ namespace giac {
   void sprintfdouble(char *,const char *,double d);
 
   extern "C" const char * caseval(const char *);
+  extern "C" const char * nws_caseval(const char * s);
   extern "C" void stack_check_init(size_t max_stack_size);
   bool stack_check(GIAC_CONTEXT);
 

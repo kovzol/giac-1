@@ -2461,8 +2461,10 @@ namespace giac {
       return inv(accurate_evalf(g._FRACptr->den,nbits),context0)*accurate_evalf(g._FRACptr->num,nbits);
     if (g.type==_VECT)
       return gen(accurate_evalf(*g._VECTptr,nbits),g.subtype);
+    if (g.type==_SYMB)
+      return symbolic(g._SYMBptr->sommet,accurate_evalf(g._SYMBptr->feuille,nbits));
     gen r,i;reim(g,r,i,context0); // only called for numeric values
-    if (is_zero(i,context0))
+    if (is_exactly_zero(i))
       return set_precision(r,nbits);
     else
       return gen(set_precision(r,nbits),set_precision(i,nbits));
@@ -4387,10 +4389,12 @@ namespace giac {
 
   gen gen::squarenorm(GIAC_CONTEXT) const {
     switch (type ) {
-    case _INT_: case _DOUBLE_: case _FLOAT_: case _ZINT: case _REAL:
+    case _INT_: case _DOUBLE_: case _FLOAT_: case _ZINT: 
       return (*this) * (*this);
+    case _REAL:
+      return sq(*this);
     case _CPLX:
-      return ( (*_CPLXptr)*(*_CPLXptr)+(*(_CPLXptr+1)*(*(_CPLXptr+1))) );   
+      return sq(*_CPLXptr)+sq(*(_CPLXptr+1));   
     case _FRAC:
       return fraction(_FRACptr->num.squarenorm(contextptr),_FRACptr->den.squarenorm(contextptr));
     default: 
@@ -4403,6 +4407,18 @@ namespace giac {
   }
 
   gen sq(const gen & a){
+#if defined HAVE_LIBMPFI && !defined NO_RTTI
+    if (a.type==_REAL){
+      if (real_interval * ptr=dynamic_cast<real_interval *>(a._REALptr)){
+	mpfi_t interv;
+	mpfi_init2(interv,mpfi_get_prec(ptr->infsup));
+        mpfi_sqr(interv,ptr->infsup);
+        gen res=gen(real_interval(interv));
+	mpfi_clear(interv);
+        return res;
+      }
+    }
+#endif
     return a*a;
   }
 
@@ -8312,6 +8328,8 @@ namespace giac {
 	return fastsign(a._SYMBptr->feuille,contextptr);
       if (a._SYMBptr->sommet==at_abs || (a._SYMBptr->sommet==at_exp && is_real(a._SYMBptr->feuille,contextptr)))
 	return 1;
+      if (a._SYMBptr->sommet==at_unit)
+        return fastsign(a._SYMBptr->feuille[0],contextptr);
     }
     if (a.type==_SYMB){
       bool aplus=a.is_symb_of_sommet(at_plus);
@@ -8432,6 +8450,8 @@ namespace giac {
 	return is_positive(a._SYMBptr->feuille-1,contextptr);
       if (a._SYMBptr->sommet==at_program)
 	return true;
+      if (a._SYMBptr->sommet==at_unit)
+        return is_positive(a._SYMBptr->feuille[0],contextptr);
       return is_greater(a,0,contextptr); 
     case _FUNC:
       return true;
@@ -8982,6 +9002,11 @@ namespace giac {
       return false;
     if (a.type==_CPLX || b.type==_CPLX)
       return symb_superieur_strict(a,b);
+    if (a.is_symb_of_sommet(at_unit) && b.is_symb_of_sommet(at_unit)){
+      gen c=a-b;
+      if (c.is_symb_of_sommet(at_unit))
+        return is_positive(c._SYMBptr->feuille[0],contextptr);
+    }
     gen approx;
     if (has_evalf(a,approx,1,contextptr) && approx.type==_CPLX && !is_zero(im(approx,contextptr)/re(approx,contextptr),contextptr))
       return symb_superieur_strict(a,b);
@@ -9100,6 +9125,8 @@ namespace giac {
       return my_isinf(e._DOUBLE_val);
     case _FLOAT_:
       return fis_inf(e._FLOAT_val);
+    case _CPLX:
+      return is_inf(*e._CPLXptr) || is_inf(*(e._CPLXptr+1));
     default:
       return false;
     }
@@ -9762,7 +9789,7 @@ namespace giac {
       if (has_inf_or_undef(i))
 	return undef;
       if (*this==x__IDNT_e || *this==t__IDNT_e)
-	return i;
+	return i; // avoid warning for expressions used as function if var is x or t
       return symb_of(*this,i);
     }
   }
@@ -13416,7 +13443,11 @@ void sprint_double(char * s,double d){
 #ifdef KHICAS
     if (python_compat(contextptr)<0)
       return "I";
+#ifdef NSPIRE_NEWLIB
+    return "i";
+#else
     return os_shell?"i":"𝐢";
+#endif
 #endif
     if (calc_mode(contextptr)==1)
       return "ί";
@@ -14358,7 +14389,8 @@ void sprint_double(char * s,double d){
 	return (_CPLXptr->print(contextptr) + string("-") + (-(*(_CPLXptr+1))).print(contextptr) + "*")+printi(contextptr);
       return (_CPLXptr->print(contextptr) + string("+") + (_CPLXptr+1)->print(contextptr) + "*")+printi(contextptr);
     case _IDNT:
-      if (calc_mode(contextptr)==1 && (is_inf(*this) || is_undef(*this)))
+      if (calc_mode(contextptr)==1 && (is_inf(*this) ||
+                                       is_undef(*this)))
 	return "?";
       return _IDNTptr->print(contextptr);
     case _SYMB: 
@@ -14479,7 +14511,7 @@ void sprint_double(char * s,double d){
 #ifdef ConnectivityKit
   const char * gen::dbgprint() const { return "Done";}
 #else
-#if defined(VISUALC) && !defined(MS_SMART)
+#if defined(VISUALC) && defined GIAC_HAS_STO_38 && !defined(MS_SMART)
 #include <atlbase.h>
   const char * gen::dbgprint() const { ATLTRACE2("%s\r\n", this->print(0).c_str()); return "Done";}
 #else
@@ -16920,6 +16952,158 @@ void sprint_double(char * s,double d){
     }
     return S.c_str();
   }
+
+  gen nws_ans=0;
+  gen replace_ans(const gen & g,GIAC_CONTEXT){
+    if (g==at_ans)
+      return nws_ans;
+    if (g.type==_VECT)
+      return apply(*g._VECTptr,replace_ans,contextptr);
+    if (g.type!=_SYMB)
+      return g;
+    return symbolic(g._SYMBptr->sommet,replace_ans(g._SYMBptr->feuille,contextptr));
+  }
+  
+const char * nws_caseval(const char * s){
+  static string * sptr=0;
+#if DBG
+  confirm("caseval",s);
+#endif
+  if (!sptr) sptr=new string;
+  string & S=*sptr;
+  static context * contextptr=0;
+  if (!contextptr) contextptr=new context;
+  calc_mode(110,contextptr); // print pi, don't use 38 (breaks Poincare)
+  gen g(s,contextptr);
+  g=equaltosto(g,contextptr);
+  if (g.type==_SYMB){
+    gen ff=g._SYMBptr->feuille; // skip regroup()
+    if (ff.type==_SYMB){
+      gen f=ff._SYMBptr->feuille; // workaround for args of command in matrix
+      if (f.type==_VECT && f._VECTptr->size()==1){
+        f=f._VECTptr->front();
+        if (f.type==_VECT){
+          f.subtype=_SEQ__VECT;
+          g=symbolic(ff._SYMBptr->sommet,f);
+        }
+      }
+    }
+  }
+#if DBG
+  confirm("parsed 1",g.print(contextptr).c_str());
+#endif
+  if (g.type==_VECT && !g._VECTptr->empty() && g._VECTptr->front().is_symb_of_sommet(at_set_language)){
+    vecteur v=*g._VECTptr;
+    protecteval(v.front(),1,contextptr);
+    v.erase(v.begin());
+    if (g.subtype==_SEQ__VECT && v.size()==1)
+      g=v.front();
+    else
+      g=gen(v,g.subtype);
+  }
+  g=replace_ans(g,contextptr);
+#if 0 // def EMCC
+  EM_ASM({
+      var value = UTF8ToString($0);
+      console.log(value);
+    },("nws_casval "+g.print()).c_str());  
+#endif
+  gen gp=g;
+  if (gp.is_symb_of_sommet(at_add_autosimplify))
+    gp=gp._SYMBptr->feuille;
+  bool push=!gp.is_symb_of_sommet(at_set_language);
+  //bool push=!g.is_symb_of_sommet(at_mathml);
+  if (push){
+    history_in(contextptr).push_back(g);
+    // COUT << "hin " << g << endl;
+  }
+  gen name;
+  if (gp.is_symb_of_sommet(at_sto))
+    name=gp._SYMBptr->feuille[1];
+  g=protecteval(g,1,contextptr);
+  if (strncmp("angle_radian:=",s,14))
+    nws_ans=g;
+#if DBG
+  confirm("evaled",g.print(contextptr).c_str());
+#endif
+  if (push){
+    history_out(contextptr).push_back(g);
+    // COUT << "hout " << g << endl;
+  }
+  if (!lop(g,at_rootof).empty())
+    g=evalf(g,1,contextptr);
+  if (has_undef_stringerr(g,S)){
+    //confirm("GIAC_ERROR: ",S.c_str());
+    S="undef";
+  }
+  else if (g==minus_inf)
+    S="-oo";
+  else if (is_inf(g))
+    S="oo";
+  else if (g.is_symb_of_sommet(at_program)){
+    gen a,b;
+    S="function";
+    //confirm(name.print(contextptr).c_str(),g.print(contextptr).c_str());
+    if (name.type==_IDNT && is_algebraic_program(g,a,b)){
+      if (a.type==_VECT && a._VECTptr->size()==1)
+        a=a._VECTptr->front();
+      if (a.type==_IDNT){
+        // string to create the same function in Epsilon
+        S +=' ';
+        if (a!=x__IDNT_e)
+          b = subst(b,a,x__IDNT_e,false,contextptr);
+        S += b.print(contextptr);
+        // sto
+        S += (char) 0xe2; S+= (char) 0x86; S+= (char) 0x92;
+        S += name.print(contextptr);
+        S +="(x)";
+        return S.c_str();
+      }
+    }
+  }
+  else {
+    S="";
+    if (g.type==_VECT)
+      g.subtype=0;
+    if (ckmatrix(g)){
+      S += "[";
+      vecteur & v=*g._VECTptr;
+      for (int i=0;i<v.size();++i){
+        S += v[i].print(contextptr);
+      }
+      S += ']';
+      //confirm("matrix",S);
+      return S.c_str();
+    }
+    else {
+      S += g.print(contextptr);
+      if (g.type==_VECT){ // workaround for Upsilon vectors 
+        if (g._VECTptr->empty())
+          S="empty";
+        else if (g._VECTptr->front().type!=_VECT)
+          S='['+S+']';
+      }
+      else if (name.type!=_IDNT && (g.type==_FRAC || g.type==_ZINT)){
+        S += "=";	  
+        S += evalf_double(g,1,contextptr).print(contextptr);
+      }
+      else if (name.type!=_IDNT && g.type==_SYMB){
+        g=evalf_double(g,1,contextptr);
+        if (g.type<=_CPLX){
+          S += "=";
+          S += g.print(contextptr);
+        }
+      }
+    }
+  }
+  if (name.type==_IDNT){
+    S="variable "+S;
+    S += (char) 0xe2; S+= (char) 0x86; S+= (char) 0x92;
+    S += name.print(contextptr);
+  }    
+  // confirm("evaled",S.c_str());
+  return S.c_str();
+}
 
 #ifdef EMCC_BIND
   EMSCRIPTEN_BINDINGS(cas){

@@ -663,11 +663,11 @@ namespace giac {
     V.swap(W);
   }
 
-#if defined GIAC_HAS_STO_38 || defined FXCG || defined NSPIRE
+#if defined FXCG || defined NSPIRE
   const int pixel_lines=1; // 320; // calculator screen 307K
   const int pixel_cols=1; // 240;
 #else
-#ifdef KHICAS
+#if defined GIAC_HAS_STO_38 || defined KHICAS
   const int pixel_lines=320;
   const int pixel_cols=240;
 #else
@@ -675,7 +675,7 @@ namespace giac {
   const int pixel_cols=768;
 #endif
 #endif
-#ifdef KHICAS
+#if defined GIAC_HAS_STO_38 || defined KHICAS
   void clear_pixel_buffer(){
   }
   vecteur get_pixel_v(){
@@ -728,8 +728,8 @@ namespace giac {
       _of(makesequence(RECT_P,args),contextptr);
 #else
       clear_pixel_buffer();
-#endif // else HP
       pixel_v_clear();
+#endif // else HP
       history_plot(contextptr).clear();
 #endif // else KHICAS
       return 1;
@@ -6729,6 +6729,8 @@ static define_unary_function_eval (__os_version,&_os_version,_os_version_s);
       }
     }
 #endif
+    if (calc_mode(contextptr)==110)
+      return string2gen(nws_caseval(args._STRNGptr->c_str()),false);
     return string2gen(caseval(args._STRNGptr->c_str()),false);
   }
   static const char _caseval_s []="caseval";
@@ -9473,7 +9475,7 @@ void sync_screen(){}
     gen a(a_);
     if (a.type==_STRNG && a.subtype==-1) return  a;
     if (a.type==_VECT && a._VECTptr->empty()){
-#ifdef KHICAS
+#if defined GIAC_HAS_STO_38 || defined KHICAS
       sync_screen();
 #else 
       cleanup_pixel_v();
@@ -9514,7 +9516,9 @@ void sync_screen(){}
 #ifdef KHICAS
 	os_set_pixel(x.val,y.val,vs==2?0:remove_at_display(v[2],contextptr).val);
 #else
-	aspen_set_pixel(x.val,y.val,vs==2?0:remove_at_display(v[2],contextptr).val);
+        int c=vs==2?0:remove_at_display(v[2],contextptr).val;
+        c=rgb565to888(c);        
+	aspen_set_pixel(x.val,y.val,c);
 #endif // KHICAS
 	return 1;
       }
@@ -10271,6 +10275,7 @@ void sync_screen(){}
   define_unary_function_ptr5( at_dtype ,alias_at_dtype,&__dtype,0,true);
 
   void (*fltk_colormap_rgb_ptr)(int c,unsigned char &r,unsigned char &g,unsigned char &b)=0;
+  void arc_en_ciel(int k,int & r,int & g,int & b);
 
   bool index2rgb(int c,unsigned char &r,unsigned char &g,unsigned char &b) {
     if (c<256) {

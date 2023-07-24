@@ -5034,6 +5034,11 @@ namespace giac {
 	}
       }
       p_gcd=p_gcd*d_content;
+      gen pz=ppz(p,true),qz=ppz(q,true);
+      gen g=simplify(pz,qz);
+      mulpoly(p_gcd,g,p_gcd);
+      mulpoly(p,pz,p);
+      mulpoly(q,qz,q);
       return ;
     }
     p_gcd=gcdpsr(p_orig,q_orig);
@@ -6004,7 +6009,7 @@ namespace giac {
     return false;
   }
 
-  bool ext_factor(const polynome &p,const gen & e,gen & an,polynome & p_content,factorization & f,bool complexmode,gen & extra_div){
+  bool ext_factor_nodegck(const polynome &p,const gen & e,gen & an,polynome & p_content,factorization & f,bool complexmode,gen & extra_div){
     if (e._EXTptr->type!=_VECT){
 #ifndef NO_STDEXCEPT
       settypeerr(gettext("Modular factorization not yet accessible"));
@@ -6066,7 +6071,7 @@ namespace giac {
       }
       gen bn2=1;
       lcmdeno(*newp._POLYptr,bn2);
-      newp=bn2*newp;
+      mulpoly(*newp._POLYptr,bn2,*newp._POLYptr); // newp=bn2*newp;
       if (the_ext.type!=_EXT)
 	return false;
       bool res=ext_factor(*newp._POLYptr,the_ext,an,p_content,f,false,extra_div);
@@ -6253,6 +6258,17 @@ namespace giac {
     return true;   
   }
 
+  bool ext_factor(const polynome &p,const gen & e,gen & an,polynome & p_content,factorization & f,bool complexmode,gen & extra_div){
+    if (!ext_factor_nodegck(p,e,an,p_content,f,complexmode,extra_div))
+      return false;
+    // additional check that degrees match
+    int pdeg=p.lexsorted_degree(),sumdeg=0;
+    for (size_t i=0;i<f.size();++i)
+      sumdeg += f[i].mult*f[i].fact.lexsorted_degree();
+    if (pdeg!=sumdeg)
+      CERR << "Degree mismatch inside factorisation over extension\n";
+    return pdeg==sumdeg;
+  }
 
   static void addtov(const polynome & tmp,vectpoly & v,bool with_sqrt,bool complexmode){
     if (!with_sqrt || tmp.lexsorted_degree()!=2 || tmp.dim>1)
@@ -6358,7 +6374,7 @@ namespace giac {
     // test if p has a numeric coeff
     if (has_num_coeff(p)){
       vecteur w=polynome2poly1(p,1);
-      w=proot(w); 
+      w=proot(w,context0); 
       if (is_undef(w))
 	return false;
       const_iterateur it=w.begin(),itend=w.end();
@@ -6378,7 +6394,7 @@ namespace giac {
 	else {
 	  copie = res;
 	  if (!is_zero(*it))
-	    copie.coord.push_back(monomial<gen>(-*it,index_t(1,0)));
+	    copie.coord.push_back(monomial<gen>(-(complexmode?*it:re(*it,context0)),index_t(1,0)));
 	}
 	v.push_back(copie);
       }
@@ -6415,6 +6431,7 @@ namespace giac {
 	  return true;
 	}
       }
+#ifndef EMCC
       if (d%4==0 && with_sqrt){
 	gen e=algebraic_EXTension(makevecteur(1,0),makevecteur(1,0,-2));
 	gen an=1,extra_div=1;
@@ -6427,6 +6444,7 @@ namespace giac {
 	  return true;
 	}
       }
+#endif
       if (p.coord.back().value==1){
 	// product of cyclotomic(n) where n divides 2d and does not divide d
 	gen dd=_minus(makesequence(idivis(2*d,context0),idivis(d,context0)),context0);
@@ -7057,6 +7075,24 @@ namespace giac {
     }
     else
       p_primit=p;
+#if 1
+    // adjust for i
+    if (!isprimitive && p_primit.coord.front().value.type==_CPLX){
+      const gen & g=p_primit.coord.front().value;
+      if (is_exactly_zero(*g._CPLXptr)){
+        if (is_strictly_positive(*(g._CPLXptr+1),context0)){
+          p_primit=-cst_i*p_primit;
+          p_content=cst_i*p_content;
+          //extra_div=cst_i*extra_div;
+        }
+        else {
+          p_primit=cst_i*p_primit;
+          p_content=-cst_i*p_content;
+          //extra_div=-cst_i*extra_div;
+        }
+      }
+    }
+#endif
     p_content /= divide_an_by;
     if (is_one(p_primit))
       return true;

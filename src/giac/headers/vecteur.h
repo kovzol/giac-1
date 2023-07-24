@@ -124,10 +124,10 @@ namespace giac {
 
   matrice companion(const vecteur & w);
   gen a_root(const vecteur & v,const std::complex<double> & c0,double eps);
-  vecteur proot(const vecteur & v);
-  vecteur proot(const vecteur & v,double eps);
-  vecteur proot(const vecteur & v,double & eps,int & rprec);
-  vecteur real_proot(const vecteur & v,double eps,GIAC_CONTEXT);
+  vecteur proot(const vecteur & v,GIAC_CONTEXT0);
+  vecteur proot(const vecteur & v,double eps,GIAC_CONTEXT0);
+  vecteur proot(const vecteur & v,double & eps,int & rprec,GIAC_CONTEXT0);
+  vecteur real_proot(const vecteur & v,double eps,GIAC_CONTEXT0);
   gen symb_proot(const gen & e) ;
   gen _proot(const gen & e,GIAC_CONTEXT);
   extern const unary_function_ptr * const  at_proot ;
@@ -500,7 +500,7 @@ namespace giac {
 #endif
   // LDL decomposition, inertia computation and solve_indef for fast system solving using the factorization
   bool ldl(matrice & a,std::vector<int> & perm,int mat_type,bool &sing,double time_limit,GIAC_CONTEXT);
-#ifdef HAVE_LIBLAPACK
+#if defined(HAVE_LIBLAPACK) && !defined(POCKETCAS)
   bool solve_indef(double *A,double **WORK,int *IPIV,double *b,int N,int NRHS,int *p,int *n,int *z);
 #endif
   bool solve_indef(matrice &A,const vecteur *b,vecteur &x,int *p,int *n,int *z,GIAC_CONTEXT);

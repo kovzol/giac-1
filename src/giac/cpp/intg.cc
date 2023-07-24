@@ -3865,10 +3865,36 @@ namespace giac {
     return r;
   }
 
+  bool has_undef(const gen & g){
+    if (is_undef(g))
+      return true;
+    if (g.type==_VECT){
+      unsigned s=unsigned(g._VECTptr->size());
+      for (unsigned i=0;i<s;++i){
+	if (has_undef((*g._VECTptr)[i]))
+	  return true;
+      }
+      return false;
+    }
+    if (g.type==_POLY){
+      unsigned s=unsigned(g._POLYptr->coord.size());
+      for (unsigned i=0;i<s;++i){
+	if (has_undef(g._POLYptr->coord[i].value))
+	  return true;
+      }
+      return false;
+    }
+    if (g.type==_SYMB)
+      return has_undef(g._SYMBptr->feuille);
+    return false;
+  }
+
   gen _integrate_(const gen &args,GIAC_CONTEXT){
 #ifdef LOGINT
     *logptr(contextptr) << gettext("integrate begin") << '\n';
 #endif
+    if (has_undef(args))
+      return undef;
     if ( args.type==_STRNG && args.subtype==-1) return  args;
     vecteur v(gen2vecteur(args));
     if (v.size()==1){
@@ -5647,8 +5673,11 @@ namespace giac {
     if (is_zero(step))
       return gensizeerr(contextptr);
     if (!is_integral(v[3]) || !is_integral(v[2])){
-      if (v.size()==4 && g.subtype==_SEQ__VECT)
+      if (v.size()==4 && g.subtype==_SEQ__VECT){
+        if (type==1)
+          return symbolic(at_product,g);
 	return gentypeerr(contextptr);
+      }
       if (type==1 && (g.subtype!=_SEQ__VECT || v.size()!=5))
 	return prodsum(v,true);
       if (type==2 && (g.subtype!=_SEQ__VECT || v.size()!=5))
