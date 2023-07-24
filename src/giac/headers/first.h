@@ -52,6 +52,13 @@
 #endif
 #endif
 
+#ifdef __VISUALC__
+#define M_SQRT2 1.4142135623730950
+#define M_PI_2 1.5707963267948966
+#define M_LN2 0.69314718055994531
+#define M_1_PI 0.31830988618379067
+#endif
+
 #ifdef HP39
 #include <time.h>
 #define M_E 2.7182818284590452
@@ -77,6 +84,11 @@
 #undef SMARTPTR64
 #undef HAVE_LONG_DOUBLE
 #endif
+
+#if defined __VISUALC__ 
+#undef BIGENDIAN
+#endif
+
 
 #ifdef RTOS_THREADX
 #define NO_STDEXCEPT 1
@@ -160,6 +172,8 @@ typedef double giac_double;
 typedef long double  long_double;
 
 // sprintf replacement
+// calls snprintf instead of sprintf with n=256, assumes s bufsize>=256
+int sprintf256(char *s,const char *format,...);
 int my_sprintf(char * s, const char * format, ...);
 #ifdef GIAC_HAS_STO_38
 //#define WITH_MYOSTREAM
@@ -564,7 +578,7 @@ inline float ffloor(float f1){
 #endif
 }
 inline float finv(float f1){ return 1/f1; }
-#if defined __APPLE__ || defined EMCC || defined EMCC2 || defined NO_BSD 
+#if defined HAVE_TGAMMAF || defined __APPLE__ || defined EMCC || defined EMCC2 || defined NO_BSD 
 inline float fgamma(float f1){ return tgammaf(f1); }
 #else
 #if defined(__MINGW_H) || defined(VISUALC) || defined(FXCG)// FIXME gamma, not used

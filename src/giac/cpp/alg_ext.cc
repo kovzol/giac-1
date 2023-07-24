@@ -293,7 +293,7 @@ namespace giac {
     if (n>307) n=307;
     double eps=std::pow(0.1,n);
     int rprec=int(n*3.3);
-    vecteur a=proot(v,eps,rprec);
+    vecteur a=proot(v,eps,rprec,contextptr);
     gen r=in_select_root(a,is_real(v,contextptr),contextptr);
     return r;
   }
@@ -537,7 +537,7 @@ namespace giac {
 	// 
 	vecteur rac=real_proot(v1,1e-12,contextptr);
 	if (rac.empty()){
-	  vecteur rac1=proot(v1,1e-12);
+	  vecteur rac1=proot(v1,1e-12,contextptr);
 	  gen theta1=in_select_root(rac1,is_real(v1,contextptr),contextptr);
 	  // replace _EXT in vb by r1 and evaluate numerically
 	  vecteur v2=replace_ext(vb,va,theta1,contextptr);
@@ -545,7 +545,7 @@ namespace giac {
 	    return v2.front();
 	  // find theta2
 	  if (is_fully_numeric(v2)){
-	    vecteur rac2=proot(v2,1e-12);
+	    vecteur rac2=proot(v2,1e-12,contextptr);
 	    if (!rac2.empty() && !is_undef(rac2)){
 	      gen theta2=in_select_root(rac2,is_real(v2,contextptr),contextptr);
 	      int racs=int(rac1.size());
@@ -851,8 +851,21 @@ namespace giac {
 	return gensizeerr(gettext("alg_ext.cc/common_EXT"));
       b__VECT=*(b._EXTptr+1);
     }
+    int innerdim=0;
+    const_iterateur b_it=b__VECT._VECTptr->begin(),b_itend=b__VECT._VECTptr->end();
+    for (;b_it!=b_itend;++b_it){
+      if (b_it->type==_POLY)
+	innerdim=b_it->_POLYptr->dim;
+    }
+    int innerdima=0;
+    const_iterateur a_it=a__VECT._VECTptr->begin(),a_itend=a__VECT._VECTptr->end();
+    for (;a_it!=a_itend;++a_it){
+      if (a_it->type==_POLY)
+	innerdima=a_it->_POLYptr->dim;
+    }
+    if (innerdima>innerdim) innerdim=innerdima;
     int as=int(a__VECT._VECTptr->size()),bs=int(b__VECT._VECTptr->size());
-    if (bs>as)
+    if (bs>as) // (innerdima>innerdim || (innerdima==innerdim && bs>as))
       return common_EXT(b,a,l,contextptr);
     if (as==3 && bs==3 && is_one(a[0]) && is_one(b[0]) && is_zero(a[1]) && is_zero(b[1]) && a[2]==-b[2]){ // sqrt(X) and sqrt(-X)
       b=algebraic_EXTension(makevecteur(cst_i,0),a);
@@ -922,12 +935,6 @@ namespace giac {
       trouve=true;
     vecteur racines;
     vector<double> real_racines;
-    int innerdim=0;
-    const_iterateur b_it=b__VECT._VECTptr->begin(),b_itend=b__VECT._VECTptr->end();
-    for (;b_it!=b_itend;++b_it){
-      if (b_it->type==_POLY)
-	innerdim=b_it->_POLYptr->dim;
-    }
     vecteur vb(innerdim);
     gen racine_max=undef;
     bool deep_emb=false; // marker for deep embedding
@@ -1020,10 +1027,10 @@ namespace giac {
 	  }
 	}
 	if (!deep_emb) 
-	  racines=proot(gen2vecteur(evalf(polynome2poly1(pb),1,contextptr)));
+	  racines=proot(gen2vecteur(evalf(polynome2poly1(pb),1,contextptr)),contextptr);
       }
       else
-	racines=proot(*evalf(b__VECT,1,contextptr)._VECTptr); // evalf to avoid recursion if computing exact roots of b__VECT
+	racines=proot(*evalf(b__VECT,1,contextptr)._VECTptr,contextptr); // evalf to avoid recursion if computing exact roots of b__VECT
       if (is_undef(racines)) return gensizeerr(contextptr);
       // racines= list of approx roots if b__VECT is numeric
       // empty if not numeric
@@ -1811,8 +1818,9 @@ namespace giac {
 	  if (v.front()==_ZINT) return 3;
 	  return 1;
 	}
-	if (v.size()==1 && v.front()==_ZINT)
+	if (v.size()==1 && v.front()==_ZINT){
 	  return 2;
+        }
       }
     }
     if (g.type==_SYMB){
@@ -1913,6 +1921,8 @@ namespace giac {
     // should be replaced by a call that gives info if a boundaries are strict
     if (!find_range(v0,a,contextptr))
       return -2;
+    if (a.empty())
+      a=vecteur(1,gen(makevecteur(minus_inf,plus_inf),_LINE__VECT));
     int previous_sign=2,current_sign=0;
 #ifndef NO_STDEXCEPT
     try {

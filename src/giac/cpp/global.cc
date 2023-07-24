@@ -78,7 +78,10 @@ using namespace std;
 #endif
 #ifndef BESTA_OS
 #ifdef WIN32
-#ifndef VISUALC
+#ifdef VISUALC
+#include <chrono>
+#include <thread>
+#else
 #if !defined(GNUWINCE) && !defined(__MINGW_H)
 #include <sys/cygwin.h>
 #endif
@@ -93,7 +96,7 @@ using namespace std;
 #include <FL/fl_ask.H>
 #endif
 
-#if defined VISUALC && !defined BESTA_OS && !defined RTOS_THREADX && !defined FREERTOS 
+#if defined VISUALC && defined GIAC_HAS_STO_38 && !defined BESTA_OS && !defined RTOS_THREADX && !defined FREERTOS 
 #include <Windows.h>
 #endif 
 
@@ -188,17 +191,30 @@ size_t pythonjs_stack_size=30*1024,
 void * bf_ctx_ptr=0;
 size_t bf_global_prec=128; // global precision for BF
 
-int my_sprintf(char * s, const char * format, ...){
-    int z;
-    va_list ap;
-    va_start(ap,format);
+int sprintf256(char * s, const char * format, ...){
+  int z;
+  va_list ap;
+  va_start(ap,format);
 #if defined(FIR) && !defined(FIR_LINUX)
-    z = firvsprintf(s, format, ap);
+  z = firvsprintf(s, format, ap);
 #else
-    z = vsprintf(s, format, ap);
+  z = vsnprintf(s, 256, format, ap);
 #endif
-    va_end(ap);
-    return z;
+  va_end(ap);
+  return z;
+}
+
+int my_sprintf(char * s, const char * format, ...){
+  int z;
+  va_list ap;
+  va_start(ap,format);
+#if defined(FIR) && !defined(FIR_LINUX)
+  z = firvsprintf(s, format, ap);
+#else
+  z = vsprintf(s, format, ap);
+#endif
+  va_end(ap);
+  return z;
 }
 
 int ctrl_c_interrupted(int exception){
@@ -1964,8 +1980,14 @@ namespace giac {
     // return _access(path, mode );
     return 0;
   }
-#ifdef RTOS_THREADX
+#if defined RTOS_THREADX || defined VISUALC
 extern "C" void Sleep(unsigned int miliSecond);
+#endif
+
+#if 0
+  extern "C" void Sleep(unsigned int ms){
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+  }
 #endif
 
   void usleep(int t){
@@ -3631,6 +3653,8 @@ extern "C" void Sleep(unsigned int miliSecond);
   unsigned short int GIAC_PADIC=50;
   const char cas_suffixe[]=".cas";
   int MAX_PROD_EXPAND_SIZE=4096;
+  int ABERTH_NMAX=25;
+  int ABERTH_NBITSMAX=8192;
 #if defined RTOS_THREADX || defined BESTA_OS || defined(KHICAS)
 #ifdef BESTA_OS
   int LIST_SIZE_LIMIT = 100000 ;
@@ -4622,9 +4646,17 @@ extern "C" void Sleep(unsigned int miliSecond);
       return "/Applications/usr/share/giac/";
     return "/Applications/usr/share/giac/";
 #endif
-#if defined WIN32 && !defined MINGW
-    return "/cygdrive/c/xcas/";
+#if defined WIN32 // check for default install path
+#ifdef MINGW
+    string ns("c:\\xcaswin\\");
+#else
+    string ns("/cygdrive/c/xcas/");
 #endif
+    if (!access((ns+"aide_cas").c_str(),R_OK)){
+      CERR << "// Giac share root-directory:" << ns << '\n';
+      return ns;
+    }
+#endif // WIN32
     string s(giac_aide_location); // ".../aide_cas"
     // test if aide_cas is there, if not test at xcasroot() return ""
     if (!access(s.c_str(),R_OK)){
@@ -7532,7 +7564,26 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
       return ok;
     }
 
-    int find_or_make_symbol(const string & s,gen & res,void * scanner,bool check38,GIAC_CONTEXT){
+#ifdef EMCC
+  bool cas_builtin(const char * s,GIAC_CONTEXT){
+    std::pair<charptr_gen *,charptr_gen *> p=std::equal_range(builtin_lexer_functions_begin(),builtin_lexer_functions_end(),std::pair<const char *,gen>(s,0),tri);
+    bool res=p.first!=p.second && p.first!=builtin_lexer_functions_end();
+    if (res)
+      return res;
+    gen g;
+    int token=find_or_make_symbol(s,g,0,false,contextptr);
+    if (g.type!=_IDNT)
+      return false;
+    gen evaled;
+    if (!g._IDNTptr->in_eval(1,g,evaled,contextptr,false))
+      return false;
+    //confirm("builtin?",evaled.print(contextptr).c_str());
+    return evaled.is_symb_of_sommet(at_program);
+    return res;
+  }
+#endif
+
+  int find_or_make_symbol(const string & s,gen & res,void * scanner,bool check38,GIAC_CONTEXT){
       int tmpo=opened_quote(contextptr);
       if (tmpo & 2)
 	check38=false;
@@ -8035,6 +8086,13 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
   std::string python2xcas(const std::string & s_orig,GIAC_CONTEXT){
     if (xcas_mode(contextptr)>0 && abs_calc_mode(contextptr)!=38)
       return s_orig;
+    if (abs_calc_mode(contextptr)==38){
+      if (s_orig.substr(0,4)=="#cas"){
+        int pos=s_orig.find("#end");
+        if (pos>0 && pos<s_orig.size())
+          return s_orig.substr(4,pos-4);
+      }
+    }
     // quick check for python-like syntax: search line ending with :
     int first=0,sss=s_orig.size();
     first=s_orig.find("maple_mode");
