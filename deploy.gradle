@@ -55,6 +55,15 @@ task javagiacLinux64Jar (dependsOn: 'javagiacLinux64SharedLibrary', type: Jar) {
     classifier 'natives-linux-amd64'
 }
 
+task javagiacRpiJar (dependsOn: 'javagiacRpiSharedLibrary', type: Jar) {
+    description 'Creates the Raspberry Pi .jar package for the Java Giac library.'
+    baseName = 'javagiac-rpi'
+    destinationDir = javagiacDir
+    from "${buildDir}/libs/javagiac/shared/rpi"
+    include '*.so'
+    classifier 'natives-linux-arm'
+}
+
 task testJavagiacLinux64 (dependsOn: 'javagiacLinux64Jar') {
     description 'Tests the Linux 64 bit version of Java Giac. [incubating]'
 }
