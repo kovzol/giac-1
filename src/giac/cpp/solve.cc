@@ -623,6 +623,17 @@ namespace giac {
       v=vecteur(1,gensizeerr(gettext("Bad equal in")+e.print(contextptr)));
       return;
     }
+    if (is_inequation(e)){
+      if (e._SYMBptr->sommet==at_inferieur_strict)
+	v=solve_inequation(e,x,-2,contextptr);
+      else if (e._SYMBptr->sommet==at_inferieur_egal)
+	v=solve_inequation(e,x,-1,contextptr);
+      else if (e._SYMBptr->sommet==at_superieur_strict)
+	v=solve_inequation(e,x,2,contextptr);
+      else if (e._SYMBptr->sommet==at_superieur_egal)
+	v=solve_inequation(e,x,1,contextptr);
+      return;
+    }
     bool complexmode=isolate_mode & 1;
     vecteur lv(lvarx(e,x));
     int s=int(lv.size());
@@ -2488,7 +2499,14 @@ namespace giac {
       return v;
     }
     // Inequation?
-    if (e.type==_SYMB){ 
+    if (e.type==_SYMB){
+      if (e._SYMBptr->sommet==at_prod){
+        vecteur res;
+        vecteur v=gen2vecteur(e._SYMBptr->feuille);
+        for (int i=0;i<v.size();++i)
+          res=mergevecteur(res,solve(v[i],x,isolate_mode,contextptr));
+        return res;
+      }
       if (e._SYMBptr->sommet==at_inferieur_strict)
 	return solve_inequation(e,x,-2,contextptr);
       if (e._SYMBptr->sommet==at_inferieur_egal)
@@ -3267,6 +3285,8 @@ namespace giac {
     decal=(b-a)/nstep;
     b=a+decal;
     for (int i=0;i<nstep;++i, a=b, fa=fb,b+=decal){
+      if (calc_mode(contextptr)==1 && res.size()>=16)
+        return res;
 #ifndef NO_STDEXCEPT
       try {
 #endif
@@ -7561,14 +7581,14 @@ namespace giac {
     // if (l.front()._VECTptr->size()==15 && order.val==11) l.front()._VECTptr->insert(l.front()._VECTptr->begin()+11,0);
     // convert eq to polynomial
     if (debug_infolevel)
-      CERR << CLOCK()*1e-6 << " before convert :" << memory_usage()*1e-6 << '\n';
+      CERR << CLOCK()*1e-6 << " memory before convert :" << memory_usage()*1e-6 << "M\n";
     vectpoly eqp;
     {
       // all negative integers will be duplicated in e2r, adding about 50% mem
       gen eqtmp=e2r(v[0],l,contextptr);
       const vecteur & eq_in=*eqtmp._VECTptr;
       if (debug_infolevel)
-	CERR << CLOCK()*1e-6 << " after convert :" << memory_usage()*1e-6 << '\n';
+	CERR << CLOCK()*1e-6 << " after convert :" << memory_usage()*1e-6 << "M\n";
       if (!vecteur2vector_polynome(eq_in,l,eqp))
 	return vecteur(1,plus_one);
     }

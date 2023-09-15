@@ -2,6 +2,7 @@
 // Thanks to Zoltan Kovacs for motivating this work, in order to improve geogebra theorem proving
 // Special thanks to Anna M. Bigatti from CoCoA team for insightfull discussions on how to choose an order for elimination
 #include "giacPCH.h"
+#define MAXNTHREADS 64
 
 #ifndef WIN32
 #define COCOA9950
@@ -4245,8 +4246,9 @@ namespace giac {
     modint a=p.coord.front().g,b=q.coord.front().g;
     tdeg_t pshift=lcm-pi;
     unsigned sugarshift=pshift.total_degree(p.order);
-    // adjust sugar for res
+    // adjust sugar/logz for res
     res.sugar=p.sugar+sugarshift;
+    res.logz=p.logz+q.logz;
     // CERR << "spoly mod " << res.sugar << " " << pi << qi << '\n';
     if (p.order.o==_PLEX_ORDER || sugarshift!=0)
       smallshift(TMP1.coord,pshift,TMP1.coord);
@@ -4347,6 +4349,79 @@ namespace giac {
     if (z1.pos!=z2.pos)
       return z2.pos>z1.pos;
     return false;
+  }
+
+  // rewrite sum(A[i]*F[i]) mod env. By decreasing degree of A[i]*F[i]
+  // if a monomial of A[i] is divisible by the leading monomial of F[j]
+  // and A[j]*F[j] has a monomial of same degree
+  // replace A[i] by A[i]-quotient*F[j] and A[j] by A[j]+quotient*F[i]
+  // this will modify only monomials with smaller degree
+  template<class tdeg_t>
+  void reduceAF(vectpolymod<tdeg_t> & A,const vectpolymod<tdeg_t> & F,modint env,order_t order){
+    return; // no visible effect
+    polymod<tdeg_t> tmp;
+    int s=F.size();
+    vector <tdeg_t> lF;
+    for (unsigned i=0;i<s;++i)
+      lF.push_back(F[i].coord.front().u);
+    vector<int> startpos(s);
+    while (1){
+      tdeg_t aifideg;
+      bool prev=false;
+      vector<int> pos;
+      // find degree
+      for (int i=0;i<s;++i){
+        if (startpos[i]<A[i].coord.size()){
+          tdeg_t curdeg=A[i].coord[startpos[i]].u+lF[i];
+          if (prev){
+            if (curdeg==aifideg){
+              pos.push_back(i);
+              continue;
+            }
+            if (tdeg_t_greater(curdeg,aifideg,order)){
+              pos.clear(); pos.push_back(i);
+              aifideg=curdeg;
+            }
+          }
+          else {
+            pos.push_back(i);
+            aifideg=curdeg;
+            prev=true;
+          }
+        }
+      }
+      if (pos.empty()) // nothing left
+        break;
+      bool found=false;
+      // check for divisibility
+      for (int i=0;!found && i<pos.size()-1;++i){
+        int posi=pos[i];
+        aifideg=A[posi].coord[startpos[posi]].u;
+        for (int j=i+1;j<pos.size();++j){
+          int posj=pos[j];
+          if (tdeg_t_all_greater(aifideg,lF[posj],order)){
+            found=true;
+            modint a=A[posi].coord[startpos[posi]].g;
+            modint b=F[posj].coord[0].g;
+            modint q=smod(modint2(a)*invmod(b,env),env);
+            tdeg_t du=aifideg-lF[posj];
+            // replace A[posi] by A[posi]-quotient*F[posj]
+            // and A[posj]] by A[posj]+quotient*F[posi]
+            smallmultsubmodshift(A[posi],0,q,F[posj],du,tmp,env);
+            A[posi].coord.swap(tmp.coord);
+            smallmultsubmodshift(A[posj],0,-q,F[posi],du,tmp,env);
+            A[posj].coord.swap(tmp.coord);
+            break;
+          }
+        }
+      }
+      if (!found){
+        // increase positions
+        for (int i=0;i<pos.size();++i){
+          ++startpos[pos[i]];
+        }
+      }
+    }
   }
 
   template<class tdeg_t>
@@ -9054,7 +9129,7 @@ namespace giac {
     return b;
   }
 
-  // set P mod p*q to be chinese remainder of P mod p and Q mod q
+  // set P mod p*q to be chinese remainder of P mod p and Q mod q 
   template<class tdeg_t>
   bool chinrem(poly8<tdeg_t> &P,const gen & pmod,poly8<tdeg_t> & Q,const gen & qmod,poly8<tdeg_t> & tmp){
     gen u,v,d,pqmod(pmod*qmod);
@@ -9189,10 +9264,56 @@ namespace giac {
     return 1;
   }
 
+  // parallel chinrem
+  
+  template<class tdeg_t>
+  struct chinrem_t {
+    poly8<tdeg_t> * Pptr;
+    const polymod<tdeg_t> * Qptr;
+    size_t start,end;
+    int U,qmodval;
+    mpz_t * pmodptr,*tmpzptr;
+  };
+
+  template<class tdeg_t>
+  void * thread_chinrem(void * _ptr){
+    chinrem_t<tdeg_t> * ptr=(chinrem_t<tdeg_t> *) _ptr;
+    poly8<tdeg_t> & P=*ptr->Pptr;
+    const polymod<tdeg_t> & Q=*ptr->Qptr;
+    size_t start=ptr->start,end=ptr->end;
+    if (end>P.coord.size())
+      end=P.coord.size();
+    int U=ptr->U,qmodval=ptr->qmodval;
+    mpz_t * pmodptr=ptr->pmodptr,*tmpzptr=ptr->tmpzptr;
+    typename vector< T_unsigned<gen,tdeg_t> >::iterator it=P.coord.begin()+start,itend=P.coord.begin()+end;
+    typename vector< T_unsigned<modint,tdeg_t> >::const_iterator jt=Q.coord.begin()+start;
+    for (;it!=itend;++it,++jt){
+      if (it->g.type==_ZINT){
+        int amodq=modulo(*it->g._ZINTptr,qmodval);
+        if (amodq==jt->g)
+          continue;
+        mpz_mul_si(*tmpzptr,*pmodptr,(U*(jt->g-longlong(amodq)))%qmodval);
+        mpz_add(*it->g._ZINTptr,*it->g._ZINTptr,*tmpzptr);
+      }
+      else {
+        mpz_mul_si(*tmpzptr,*pmodptr,(U*(longlong(jt->g)-it->g.val))%qmodval);
+        if (it->g.val>=0)
+          mpz_add_ui(*tmpzptr,*tmpzptr,it->g.val);
+        else
+          mpz_sub_ui(*tmpzptr,*tmpzptr,-it->g.val);
+        it->g=*tmpzptr;
+      }
+    }
+    return ptr;
+  }
 
   // set P mod p*q to be chinese remainder of P mod p and Q mod q
   template<class tdeg_t>
-  bool chinrem(poly8<tdeg_t> &P,const gen & pmod,const polymod<tdeg_t> & Q,int qmodval,poly8<tdeg_t> & tmp){
+  bool chinrem(poly8<tdeg_t> &P,const gen & pmod,const polymod<tdeg_t> & Q,int qmodval,poly8<tdeg_t> & tmp,int nthreads=1){
+    if (pmod.type!=_ZINT)
+      nthreads=1;
+    if (nthreads>MAXNTHREADS)
+      nthreads=MAXNTHREADS;
     gen u,v,d,pqmod(qmodval*pmod);
     egcd(pmod,qmodval,u,v,d);
     if (u.type==_ZINT)
@@ -9212,6 +9333,49 @@ namespace giac {
 	  break;
       }
       if (it==itend){
+#if !defined USE_GMP_REPLACEMENTS && defined HAVE_LIBPTHREAD
+        if (//0 &&
+            nthreads>1 
+            // && P.coord.size()>=64*nthreads
+            ){
+          // realloc mpz_t inside P ?
+          size_t cur=sizeinbase2(pqmod);
+          int N=sizeinbase2(cur)-1;
+          size_t N2=(1ULL << N);
+          gen N3=pow(2,N2+31);
+          if (is_greater(N3,pqmod,context0)){
+            if (debug_infolevel)
+              CERR << CLOCK()*1e-6 << " parallel chinrem realloc bits=" << 2*N2 << "\n";
+            for (it=P.coord.begin();it!=itend;++it){
+              if (it->g.type!=_ZINT) continue;
+              mpz_t & z=*it->g._ZINTptr;
+              size_t taille=mpz_size(z)*sizeof(mp_limb_t)*8;
+              if (taille<2*N2)
+                mpz_realloc2(z,2*N2);
+            }
+          }
+          // parallel chinese remaindering 
+          chinrem_t<tdeg_t> chinrem_param[MAXNTHREADS]; mpz_t tmptab[MAXNTHREADS];
+          pthread_t tab[MAXNTHREADS];
+          for (int j=0;j<nthreads;++j){
+            chinrem_t<tdeg_t> tmp={&P,&Q,j*P.coord.size()/nthreads,(j+1)*P.coord.size()/nthreads,U,qmodval,pmod._ZINTptr,&tmptab[j]};
+            chinrem_param[j]=tmp;
+            mpz_init2(tmptab[j],cur);
+            bool res=true;
+            if (j<nthreads-1)
+              res=pthread_create(&tab[j],(pthread_attr_t *) NULL,thread_chinrem<tdeg_t>,(void *) &chinrem_param[j]);
+            if (res)
+              thread_chinrem<tdeg_t>((void *)&chinrem_param[j]);
+          } // end creating threads
+          for (unsigned j=0;j<nthreads;++j){
+            void * ptr_=(void *)&nthreads; // non-zero initialisation
+            if (j<nthreads-1) pthread_join(tab[j],&ptr_);
+            mpz_clear(tmptab[j]); 
+          }
+          mpz_clear(tmpz);
+          return true;
+        }
+#endif
 	for (it=P.coord.begin(),jt=Q.coord.begin();it!=itend;++jt,++it){
 	  if (pmod.type!=_ZINT){
 	    it->g=it->g+u*(jt->g-it->g)*pmod;
@@ -9310,7 +9474,7 @@ namespace giac {
   // P and Q must have same leading monomials,
   // otherwise returns 0 and leaves P unchanged
   template<class tdeg_t>
-  int chinrem(vectpoly8<tdeg_t> &P,const gen & pmod,const vectpolymod<tdeg_t> & Q,int qmod,poly8<tdeg_t> & tmp,int start=0){
+  int chinrem(vectpoly8<tdeg_t> &P,const gen & pmod,const vectpolymod<tdeg_t> & Q,int qmod,poly8<tdeg_t> & tmp,int start=0,int nthreads=1){
     if (P.size()!=Q.size())
       return 0;
     for (unsigned i=start;i<P.size();++i){
@@ -9325,7 +9489,7 @@ namespace giac {
     }
     // LP(P)==LP(Q), proceed to chinese remaindering
     for (unsigned i=start;i<P.size();++i){
-      if (!chinrem(P[i],pmod,Q[i],qmod,tmp))
+      if (!chinrem(P[i],pmod,Q[i],qmod,tmp,nthreads))
 	return -1;
     }
     return 1;
@@ -9387,10 +9551,107 @@ namespace giac {
     return true;
   }
 
+  bool chk_equal_mod(const gen & a,const vector<int> & p,int m){
+    if (a.type!=_VECT || a._VECTptr->size()!=p.size())
+      return false;
+    const_iterateur it=a._VECTptr->begin(),itend=a._VECTptr->end();
+    vector<int>::const_iterator jt=p.begin();
+    for (;it!=itend;++jt,++it){
+      if (it->type==_INT_ && it->val==*jt) continue;
+      if (!chk_equal_mod(*it,*jt,m))
+	return false;
+    }
+    return true;
+  }
+
+  bool chk_equal_mod(const vecteur & v,const vector< vector<int> >& p,int m){
+    if (v.size()!=p.size())
+      return false;
+    for (unsigned i=0;i<p.size();++i){
+      if (!chk_equal_mod(v[i],p[i],m))
+	return false;
+    }
+    return true;
+  }
+
   template<class tdeg_t>
-  bool fracmod(const poly8<tdeg_t> &P,const gen & p,
+  bool chk_equal_mod(const poly8<tdeg_t> & v,const polymod<tdeg_t> & p,int m){
+    // sizes may differ if a coeff of v is 0 mod m
+    if (v.coord.size()<p.coord.size())
+      return false;
+    if (v.coord.empty())
+      return true;
+    unsigned s = unsigned(v.coord.size());
+    int lc=smod(v.coord[0].g,m).val;
+    int lcp=p.coord.empty()?1:p.coord[0].g;
+    if (s==p.coord.size()){
+      if (lcp!=1){
+	for (unsigned i=0;i<s;++i){
+	  if (!chk_equal_mod(lcp*v.coord[i].g,(longlong(lc)*p.coord[i].g)%m,m))
+	    return false;
+	}
+      }
+      else {
+	for (unsigned i=0;i<s;++i){
+	  if (!chk_equal_mod(v.coord[i].g,(longlong(lc)*p.coord[i].g)%m,m))
+	    return false;
+	}
+      }
+      return true;
+    }
+    unsigned j=0; // position in p
+    for (unsigned i=0;i<s;++i){
+      if (v.coord[i].u==p.coord[j].u){
+	if (!chk_equal_mod(lcp*v.coord[i].g,(longlong(lc)*p.coord[j].g)%m,m))
+	  return false;
+	++j;
+      }
+      if (!chk_equal_mod(lcp*v.coord[i].g,0,m))
+	return false;
+    }
+    return true;
+  }
+
+  template<class tdeg_t>
+  bool chk_equal_mod(const vectpoly8<tdeg_t> & v,const vectpolymod<tdeg_t> & p,const vector<unsigned> & G,int m){
+    if (v.size()!=G.size())
+      return false;
+    for (unsigned i=0;i<G.size();++i){
+      if (!chk_equal_mod(v[i],p[G[i]],m))
+	return false;
+    }
+    return true;
+  }
+
+  template<class tdeg_t>
+  bool chk_equal_mod(const poly8<tdeg_t> & v,const poly8<tdeg_t> & p,int m){
+    if (v.coord.size()!=p.coord.size())
+      return false;
+    unsigned s=unsigned(p.coord.size());
+    int lc=smod(v.coord[0].g,m).val;
+    for (unsigned i=0;i<s;++i){
+      if (!chk_equal_mod(v.coord[i].g,(longlong(lc)*p.coord[i].g.val)%m,m))
+	return false;
+    }
+    return true;
+  }
+
+  template<class tdeg_t>
+  bool chk_equal_mod(const vectpoly8<tdeg_t> & v,const vectpoly8<tdeg_t> & p,const vector<unsigned> & G,int m){
+    if (v.size()!=G.size())
+      return false;
+    for (unsigned i=0;i<G.size();++i){
+      if (!chk_equal_mod(v[i],p[G[i]],m))
+	return false;
+    }
+    return true;
+  }
+
+  template<class tdeg_t>
+  int fracmod(const poly8<tdeg_t> &P,const gen & p,
 	       mpz_t & d,mpz_t & d1,mpz_t & absd1,mpz_t &u,mpz_t & u1,mpz_t & ur,mpz_t & q,mpz_t & r,mpz_t &sqrtm,mpz_t & tmp,
-	       poly8<tdeg_t> & Q){
+	       poly8<tdeg_t> & Q,
+               polymod<tdeg_t> * chkptr=0,int chkp=0){
     Q.coord.clear();
     Q.coord.reserve(P.coord.size());
     Q.dim=P.dim;
@@ -9404,7 +9665,7 @@ namespace giac {
 	g.uncoerce();
       if ( (g.type!=_ZINT) || (p.type!=_ZINT) ){
 	CERR << "bad type"<<'\n';
-	return false;
+	return 0;
       }
       if (tryL && L.type==_ZINT){
 	num=smod(L*g,p);
@@ -9415,7 +9676,7 @@ namespace giac {
 	}
       }
       if (!in_fracmod(p,g,d,d1,absd1,u,u1,ur,q,r,sqrtm,tmp,num,den))
-	return false;
+	return 0;
       if (num.type==_ZINT && mpz_sizeinbase(*num._ZINTptr,2)<=30)
 	num=int(mpz_get_si(*num._ZINTptr));
       if (den.type==_ZINT && mpz_sizeinbase(*den._ZINTptr,2)<=30)
@@ -9430,8 +9691,13 @@ namespace giac {
 	tryL=is_greater(p,L*L,context0);
       }
       Q.coord.push_back(T_unsigned<gen,tdeg_t>(g,P.coord[i].u));
+      if (chkptr && !chk_equal_mod(g,chkptr->coord[i].g,chkp)){
+        if (debug_infolevel)
+          CERR << CLOCK()*1e-6 << " early fracmod chk failure position " << i << " (" << P.coord.size() << ")\n";
+        return 2;
+      }
     }
-    return true;
+    return 1;
   }
 
   template<class tdeg_t>
@@ -9829,102 +10095,6 @@ namespace giac {
 	B=b;
     }
     return B;
-  }
-
-  bool chk_equal_mod(const gen & a,const vector<int> & p,int m){
-    if (a.type!=_VECT || a._VECTptr->size()!=p.size())
-      return false;
-    const_iterateur it=a._VECTptr->begin(),itend=a._VECTptr->end();
-    vector<int>::const_iterator jt=p.begin();
-    for (;it!=itend;++jt,++it){
-      if (it->type==_INT_ && it->val==*jt) continue;
-      if (!chk_equal_mod(*it,*jt,m))
-	return false;
-    }
-    return true;
-  }
-
-  bool chk_equal_mod(const vecteur & v,const vector< vector<int> >& p,int m){
-    if (v.size()!=p.size())
-      return false;
-    for (unsigned i=0;i<p.size();++i){
-      if (!chk_equal_mod(v[i],p[i],m))
-	return false;
-    }
-    return true;
-  }
-
-  template<class tdeg_t>
-  bool chk_equal_mod(const poly8<tdeg_t> & v,const polymod<tdeg_t> & p,int m){
-    // sizes may differ if a coeff of v is 0 mod m
-    if (v.coord.size()<p.coord.size())
-      return false;
-    if (v.coord.empty())
-      return true;
-    unsigned s = unsigned(v.coord.size());
-    int lc=smod(v.coord[0].g,m).val;
-    int lcp=p.coord.empty()?1:p.coord[0].g;
-    if (s==p.coord.size()){
-      if (lcp!=1){
-	for (unsigned i=0;i<s;++i){
-	  if (!chk_equal_mod(lcp*v.coord[i].g,(longlong(lc)*p.coord[i].g)%m,m))
-	    return false;
-	}
-      }
-      else {
-	for (unsigned i=0;i<s;++i){
-	  if (!chk_equal_mod(v.coord[i].g,(longlong(lc)*p.coord[i].g)%m,m))
-	    return false;
-	}
-      }
-      return true;
-    }
-    unsigned j=0; // position in p
-    for (unsigned i=0;i<s;++i){
-      if (v.coord[i].u==p.coord[j].u){
-	if (!chk_equal_mod(lcp*v.coord[i].g,(longlong(lc)*p.coord[j].g)%m,m))
-	  return false;
-	++j;
-      }
-      if (!chk_equal_mod(lcp*v.coord[i].g,0,m))
-	return false;
-    }
-    return true;
-  }
-
-  template<class tdeg_t>
-  bool chk_equal_mod(const vectpoly8<tdeg_t> & v,const vectpolymod<tdeg_t> & p,const vector<unsigned> & G,int m){
-    if (v.size()!=G.size())
-      return false;
-    for (unsigned i=0;i<G.size();++i){
-      if (!chk_equal_mod(v[i],p[G[i]],m))
-	return false;
-    }
-    return true;
-  }
-
-  template<class tdeg_t>
-  bool chk_equal_mod(const poly8<tdeg_t> & v,const poly8<tdeg_t> & p,int m){
-    if (v.coord.size()!=p.coord.size())
-      return false;
-    unsigned s=unsigned(p.coord.size());
-    int lc=smod(v.coord[0].g,m).val;
-    for (unsigned i=0;i<s;++i){
-      if (!chk_equal_mod(v.coord[i].g,(longlong(lc)*p.coord[i].g.val)%m,m))
-	return false;
-    }
-    return true;
-  }
-
-  template<class tdeg_t>
-  bool chk_equal_mod(const vectpoly8<tdeg_t> & v,const vectpoly8<tdeg_t> & p,const vector<unsigned> & G,int m){
-    if (v.size()!=G.size())
-      return false;
-    for (unsigned i=0;i<G.size();++i){
-      if (!chk_equal_mod(v[i],p[G[i]],m))
-	return false;
-    }
-    return true;
   }
 
   // excluded==-1 and G==identity in calls
@@ -11617,7 +11787,7 @@ template<class modint_t,class modint_u>
     if (info_ptr && !learning)
       Ksizes=giacmin(info_ptr->Ksizes+3,Kcols);
     bool Kdone=false;
-    int th=parallel-1; // giacmin(threads,64)-1;
+    int th=giacmin(parallel,MAXNTHREADS)-1; // giacmin(threads,64)-1;
 #ifdef GIAC_CACHE2ND
     vector<modint2> subcoeff2;
 #else
@@ -11681,8 +11851,8 @@ template<class modint_t,class modint_u>
 	else
 	  positions.back()=Bs;
       } // end else interreduce 
-      pthread_t tab[64];
-      thread_buchberger_t<tdeg_t> buchberger_param[64];
+      pthread_t tab[MAXNTHREADS];
+      thread_buchberger_t<tdeg_t> buchberger_param[MAXNTHREADS];
       int colonnes=N;
       for (int j=0;j<=th;++j){
 	thread_buchberger_t<tdeg_t> tmp={&res,&K,&G,&B,&permuB,&leftshift,&rightshift,&R,Rhashptr,&Rdegpos,env,positions[j],positions[j+1],int(N),int(Kcols),&firstpos,&Mindex,&Mcoeff,&coeffindex,&indexes,&used,bitmap,j==th && debug_infolevel>1,learning,(short int)interreduce,pairs_reducing_to_zero,learned_parallel[j]};
@@ -12384,7 +12554,7 @@ template<class modint_t,class modint_u>
       }
       swap(K1,K);
     }
-    int th=parallel-1; // giacmin(threads,64)-1;
+    int th=giacmin(parallel,MAXNTHREADS)-1; // giacmin(threads,64)-1;
     if (interreduce){ // interreduce==true means final interreduction
       ;
     }
@@ -12906,7 +13076,7 @@ Let {f1, ..., fr} be a set of polynomials. The Gebauer-Moller Criteria are as fo
 
   template<class tdeg_t>
   bool in_zgbasis(vectpolymod<tdeg_t> &resmod,unsigned ressize,vector<unsigned> & G,modint env,bool totdeg,vector< paire > * pairs_reducing_to_zero,vector< zinfo_t<tdeg_t> > & f4buchberger_info,bool recomputeR,bool eliminate_flag,bool multimodular,int parallel,bool interred,vector< vectpolymod<tdeg_t> > * coeffsmodptr){
-    vectpolymod<tdeg_t> resmodorig=resmod; // used for debug only
+    vectpolymod<tdeg_t> resmodorig(resmod); resmodorig.resize(ressize);
     unsigned generators=ressize;
     bool seldeg=true; int sel1=0;
     ulonglong cleared=0;
@@ -12953,6 +13123,8 @@ Let {f1, ..., fr} be a set of polynomials. The Gebauer-Moller Criteria are as fo
     for (unsigned l=0;l<ressize;++l){
 #ifdef GIAC_REDUCEMODULO
       reducesmallmod(resmod[l],resmod,G,-1,env,TMP2,env!=0,0,false,coeffsmodptr?&(*coeffsmodptr)[l]:0,coeffsmodptr);
+      if (coeffsmodptr)
+        reduceAF((*coeffsmodptr)[l],resmodorig,env,order);
 #endif
       gbasis_updatemod(G,B,resmod,l,TMP2,env,coeffsmodptr?false:true,oldG);
     }
@@ -13029,11 +13201,12 @@ Let {f1, ..., fr} be a set of polynomials. The Gebauer-Moller Criteria are as fo
 	}
       }
       vector<tdeg_t> Blcm(B.size());
-      vector<int> Blcmdeg(B.size());
+      vector<int> Blcmdeg(B.size()),Blogz(B.size());
       vector<unsigned> nterms(B.size());
       for (unsigned i=0;i<B.size();++i){
 	clean[B[i].first]=false;
 	clean[B[i].second]=false;
+        Blogz[i]=resmod[B[i].first].logz+resmod[B[i].second].logz;
 	index_lcm(res[B[i].first].ldeg,res[B[i].second].ldeg,Blcm[i],order);
 	if (!totdeg)
 	  Blcmdeg[i]=giacmax(res[B[i].first].maxtdeg+(Blcm[i]-res[B[i].first].ldeg).total_degree(order),res[B[i].second].maxtdeg+(Blcm[i]-res[B[i].second].ldeg).total_degree(order));
@@ -13137,8 +13310,26 @@ Let {f1, ..., fr} be a set of polynomials. The Gebauer-Moller Criteria are as fo
 	}
 	polymod<tdeg_t> TMP1(order,dim),TMP2(order,dim);
 	zpolymod<tdeg_t> TMP;
-	paire bk=B[smallposv.back()];
-	B.erase(B.begin()+smallposv.back());
+	paire bk;
+        if (coeffsmodptr){
+#if 0
+          // find smallest logz
+          int logzpos=0,logz=Blogz[smallposv.front()];
+          for (int i=1;i<smallposv.size();++i){
+            if (Blogz[smallposv[i]]<logz){
+              logzpos=i;
+              logz=Blogz[smallposv[i]];
+            }
+          }
+          bk=B[smallposv[logzpos]]; B.erase(B.begin()+smallposv[logzpos]);
+#else
+          bk=B[smallposv.front()]; B.erase(B.begin()+smallposv.front());
+#endif
+        }
+        else {
+          bk=B[smallposv.back()];
+          B.erase(B.begin()+smallposv.back());
+        }
 	if (!learning && pairs_reducing_to_zero && learned_position<pairs_reducing_to_zero->size() && bk==(*pairs_reducing_to_zero)[learned_position]){
 	  if (debug_infolevel>2)
 	    CERR << bk << " learned " << learned_position << '\n';
@@ -13226,6 +13417,7 @@ Let {f1, ..., fr} be a set of polynomials. The Gebauer-Moller Criteria are as fo
 	}
 	if (!TMP1.coord.empty()){
 	  resmod.push_back(TMP1);
+          reduceAF(newcoeffs,resmodorig,env,order);
 	  if (coeffsmodptr){
 	    coeffsmodptr->push_back(newcoeffs);
 	    // if coeffsmodptr, we need TMP and res only to run zgbasis_updatemod, maybe we could run gbasis_updatemod without zpolymod with reduce=false argument
@@ -13454,8 +13646,16 @@ Let {f1, ..., fr} be a set of polynomials. The Gebauer-Moller Criteria are as fo
       unsigned t=0;
       for (unsigned i=0;i<resmod.size();++i)
 	t += unsigned(resmod[i].coord.size());
-      CERR << CLOCK()*1e-6 << " total number of monomials in res " << t << " basis size " << G.size() << '\n';
+      CERR << CLOCK()*1e-6 << " total number of monomials in gbasis " << t << " basis size " << G.size() << '\n';
       CERR << "Number of monomials cleared " << cleared << '\n';
+      if (coeffsmodptr){
+        for (unsigned i=0;i<G.size();++i){
+          const vector<polymod<tdeg_t> > & v=(*coeffsmodptr)[G[i]];
+          for (unsigned j=0;j<v.size();++j)
+            t += v[j].coord.size();
+        }
+        CERR << "Number of monomials in gbasis and coeffs " << t << '\n';
+      }
     }
     smod(resmod,env);
     return true;
@@ -15105,11 +15305,11 @@ void G_idn(vector<unsigned> & G,size_t s){
       lcmdeno(v[i],vden[i],context0);
     }
 #ifdef HAVE_LIBPTHREAD
-    int nthreads=threads_allowed?threads:1;
+    int nthreads=threads_allowed?giacmin(threads,MAXNTHREADS):1;
     if (nthreads>1){
       if (nthreads>rur_certify_maxthreads) nthreads=rur_certify_maxthreads; // don't use too much memory
       *logptr(contextptr) << "rur_certify: multi-thread check, info displayed on may miss some threads info. Threads in use: " << nthreads << "\n";
-      pthread_t tab[64];
+      pthread_t tab[MAXNTHREADS];
       vector< rur_certify_t<tdeg_t> > rur_certify_param; rur_certify_param.reserve(nthreads);
       for (int j=0;j<nthreads;++j){
 	vector<int> chk_index;
@@ -15124,7 +15324,7 @@ void G_idn(vector<unsigned> & G,size_t s){
 	  thread_rur_certify<tdeg_t>((void *)&rur_certify_param[j]);
       }
       bool ans=true;
-      void * threadretval[64];
+      void * threadretval[MAXNTHREADS];
       for (int j=0;j<nthreads;++j){
 	threadretval[j]=&threadretval; // non-0 initialization
 	if (j<nthreads-1)
@@ -15257,9 +15457,9 @@ void G_idn(vector<unsigned> & G,size_t s){
     mpz_init(ztmp);
     bool ok=true;
 #ifdef HAVE_LIBPTHREAD
-    int nthreads=(threads_allowed && multithread_enabled)?threads:1,th,parallel=1;
-    pthread_t tab[64];
-    thread_gbasis_t<tdeg_t> gbasis_param[64];
+    int nthreads=(threads_allowed && multithread_enabled)?giacmin(threads,MAXNTHREADS):1,th,parallel=1;
+    pthread_t tab[MAXNTHREADS];
+    thread_gbasis_t<tdeg_t> gbasis_param[MAXNTHREADS];
 #else
     int nthreads=1,th,parallel=1;
 #endif
@@ -15289,7 +15489,7 @@ void G_idn(vector<unsigned> & G,size_t s){
 	if (count>=simult_primes_seuil3)
 	  sp=simult_primes3;
 	th=giacmin(nthreads-1,sp-1); // no more than simult_primes 
-	th=giacmin(th,63);
+	th=giacmin(th,MAXNTHREADS-1);
 	parallel=nthreads/(th+1);
       }
 #if !defined(EMCC) && !defined(EMCC2)
@@ -15445,7 +15645,7 @@ void G_idn(vector<unsigned> & G,size_t s){
 #endif
 #ifdef HAVE_LIBPTHREAD
       // finish threads before chinese remaindering
-      void * threadretval[64];
+      void * threadretval[MAXNTHREADS];
       for (int t=0;t<th;++t){
 	threadretval[t]=&threadretval; // non-0 initialization
 	pthread_join(tab[t],&threadretval[t]);
@@ -15856,7 +16056,8 @@ void G_idn(vector<unsigned> & G,size_t s){
 	    } // end if !rur ...
 	    break; // find another prime
 	  }
-	  if (debug_infolevel) CERR << CLOCK()*1e-6 << " checking\n";
+	  if (debug_infolevel && (rur || t==th))
+            CERR << CLOCK()*1e-6 << " checking\n";
 	  for (;jpos<V[i].size();++jpos){
 	    unsigned Vijs=unsigned(V[i][jpos].coord.size());
 	    if (Vijs!=gbmod[jpos].coord.size()){
@@ -15870,6 +16071,11 @@ void G_idn(vector<unsigned> & G,size_t s){
 	    int chks[]={int(.1*Vijs),int(Vijs/2), int(.9*Vijs)};
 	    //int chks[]={Vijs/2, int(.9*Vijs)};
 	    for (int chk=0;chk<sizeof(chks)/sizeof(int);++chk){
+              if (!rur && t<th){
+                // check only for the last prime of parallel threads
+                dobrk=true;
+                break;
+              }
 	      Vijs=chks[chk];
 	      if (Vijs && V[i][jpos].coord[Vijs].g.type==_ZINT){
 		if (!in_fracmod(P[i],V[i][jpos].coord[Vijs].g,
@@ -15896,9 +16102,10 @@ void G_idn(vector<unsigned> & G,size_t s){
 	      }
 	      break;
 	    }
-	    if (!fracmod(V[i][jpos],P[i],
-			 zd,zd1,zabsd1,zu,zu1,zur,zq,zr,zsqrtm,ztmp,
-			 poly8tmp)){
+            int chkfrac=fracmod(V[i][jpos],P[i],
+                                zd,zd1,zabsd1,zu,zu1,zur,zq,zr,zsqrtm,ztmp,
+                                poly8tmp,&gbmod[jpos],p.val);
+	    if (chkfrac==0){
 	      rechecked=0;
 	      CERR << CLOCK()*1e-6 << " reconstruction failure at position " << jpos << '\n';
 	      break;
@@ -15910,7 +16117,9 @@ void G_idn(vector<unsigned> & G,size_t s){
 	      }
 	      break;
 	    }
-	    if (!chk_equal_mod(poly8tmp,gbmod[jpos],p.val)){
+	    if (chkfrac==2 || !chk_equal_mod(poly8tmp,gbmod[jpos],p.val)){
+              if (chkfrac==2 && debug_infolevel)
+                CERR << CLOCK()*1e-6 << " unstable modular check at position " << jpos << "\n";
 	      rechecked=0;
 	      if (rur_gbasis && rur>0 && jpos<gbasis_size){ // go try to reconstruct the rur part
 		jpos=gbasis_size-1; continue;
@@ -15952,7 +16161,7 @@ void G_idn(vector<unsigned> & G,size_t s){
 	      cleardeno(current_gbasis);
 	    }
 	    double reconpart=recon_n2/double(V[i].size());
-	    if (!rur &&
+	    if (!rur && !coeffsmodptr &&
 		recon_n0/double(V[i].size())<0.95 && 
 		(reconpart-prevreconpart>augmentgbasis 
 		 // || (reconpart>prevreconpart && recon_count>=giacmax(128,th*4))
@@ -16042,7 +16251,7 @@ void G_idn(vector<unsigned> & G,size_t s){
 	if (jpos<gbmod.size()){
 	  if (debug_infolevel)
 	    CERR << CLOCK()*1e-6 << " i=" << i << " begin chinese remaindering " << p << " (" << count+(t==th) << ")" << '\n';
-	  int r=chinrem(V[i],P[i],gbmod,p.val,poly8tmp,recon_added);// was jpos_start); but fails for cyclic7 // IMPROVE: maybe start at jpos in V[i]? at least start at recon_added
+	  int r=chinrem(V[i],P[i],gbmod,p.val,poly8tmp,recon_added,nthreads);// was jpos_start); but fails for cyclic7 // IMPROVE: maybe start at jpos in V[i]? at least start at recon_added
 	  if (debug_infolevel)
 	    CERR << CLOCK()*1e-6 << " end chinese remaindering" << '\n';
 	  if (r==-1){
