@@ -79,7 +79,7 @@ def emsdkRunDir = file("$emsdkDir")
 
 def emscriptenVersion = 'tag-3.1.18'
 if (System.env['EMSCRIPTEN_VERSION'] != null) {
-    emscriptenVersion = System.env['EMSCRIPTEN_VERSION'];
+    emscriptenVersion = System.env['EMSCRIPTEN_VERSION']
 }
 def emscriptenDir = file("$emsdkRunDir/emscripten/latest")
 
@@ -138,14 +138,14 @@ def minIosVersion = '9.0'
 def simulatorPostfix = "-simulator"
 def catalystPostfix = "-macabi"
 def iosTarget(arch, minIosVersion, postfix = "") {
-    return "${arch}-apple-ios${minIosVersion}${postfix}";
+    return "${arch}-apple-ios${minIosVersion}${postfix}"
 }
 
 def iosClangCompilerArgs(args, sdk, arch, minIosVersion, target) {
     appleCompilerArgs(args)
     for (int i = args.size() - 1; i >= 0; i--) {
         if (args[i].equals("-nostdinc")) {
-            args.remove(i);
+            args.remove(i)
         }
     }
     args << "-isysroot"
@@ -212,7 +212,7 @@ def giacSpecificSettings(cppCompiler, linker, targetPlatform) {
         cppCompiler.define 'usleep',''
         cppCompiler.define 'YY_NO_UNISTD_H'
 
-        cppCompiler.args '-I', file('src/jni/jdkHeaders/win32').toString()
+        cppCompiler.args '-I', file('src/jni/jdkHeaders/win').toString()
         // Insert prebuilt libraries
         linker.args '-Wl,--add-stdcall-alias'
         linker.args '-s' // stripping
@@ -286,8 +286,8 @@ def appleCompilerArgs(args) {
     // isystem args also removed, see https://github.com/gradle/gradle-native/issues/583
     for (int i = args.size() - 1; i >= 0; i--) {
         if ((args[i].equals("-I") || args[i].equals("-isystem")) && !args[i+1].startsWith("$rootDir")) {
-            args.remove(i + 1);
-            args.remove(i);
+            args.remove(i + 1)
+            args.remove(i)
         }
     }
 }
@@ -329,17 +329,9 @@ model {
     }
 
     platforms {
-        win32 {
-            architecture 'i386'
-            operatingSystem 'windows'
-        }
         win64 {
             architecture 'x64'
             operatingSystem 'windows'
-        }
-        linux32 { // this will be fixed in Gradle 2.4 (-> linux32)
-            architecture 'i386'
-            operatingSystem 'linux'
         }
         linux64 {
             architecture 'x64'
@@ -397,10 +389,6 @@ model {
 
     toolChains {
         mingw(Gcc) {
-            target('win32') {
-                cppCompiler.executable 'i686-w64-mingw32-g++'
-                linker.executable 'i686-w64-mingw32-g++'
-            }
             target('win64') {
                 cppCompiler.executable 'x86_64-w64-mingw32-g++'
                 linker.executable 'x86_64-w64-mingw32-g++'
@@ -510,7 +498,6 @@ model {
     components {
         // giac static libary
         giac(NativeLibrarySpec) {
-            targetPlatform 'linux32'
             targetPlatform 'linux64'
             targetPlatform 'ios_arm64'
             targetPlatform 'iphonesimulator_x86_64'
@@ -561,7 +548,6 @@ model {
         }
 
         minigiac(NativeExecutableSpec) {
-            targetPlatform 'linux32'
             targetPlatform 'linux64'
 
             binaries.all {
@@ -585,9 +571,7 @@ model {
         }
 
         javagiac(NativeLibrarySpec) {
-            targetPlatform 'win32'
             targetPlatform 'win64'
-            targetPlatform 'linux32' // this will be fixed in Gradle 2.4 (-> linux32)
             targetPlatform 'linux64'
             if (isMac) {
                 targetPlatform 'osx_amd64'
@@ -1040,7 +1024,7 @@ task createGiacWasmJs(dependsOn: 'createGiacGgbJsWasm') {
             commandLine "bash", "-c", "base64 -w0 giacggb.wasm > giacggb.wasm.b64"
             workingDir binaryJsDir
         }
-        def wasmBase64 = file("${binaryJsDir}/giacggb.wasm.b64").text;
+        def wasmBase64 = file("${binaryJsDir}/giacggb.wasm.b64").text
         file("${binaryJsDir}/giac.wasm.js").text = file("${binaryJsDir}/giacggb.js").text
                 .replace('Module', '__ggb__giac').replace('"use asm";', '')
                 .replace('giacggb.wasm', "data:application/octet-stream;base64,${wasmBase64}")

@@ -2775,7 +2775,8 @@ namespace giac {
   }
 
   vecteur proot(const vecteur & v,double & eps,int & rprec,GIAC_CONTEXT){
-    return proot(v,eps,rprec,true,contextptr);
+    vecteur res(proot(v,eps,rprec,true,contextptr));
+    return res;
   }
 
   vecteur proot(const vecteur & v,double eps,GIAC_CONTEXT){
@@ -6376,10 +6377,29 @@ namespace giac {
     return true;
   }
 
+  bool is_cinteger_vecteur(const vecteur & m){
+    const_iterateur it=m.begin(),itend=m.end();
+    for (;it!=itend;++it){
+      if (it->type==_INT_) continue;
+      if (it->type==_ZINT) continue;
+      if (it->type==_CPLX && is_integer(*it->_CPLXptr) && is_integer(*(it->_CPLXptr+1))) continue;
+      return false;
+      // if (!is_integer(*it)) return false;
+    }
+    return true;
+  }
+
   bool is_integer_matrice(const matrice & m,bool intonly){
     const_iterateur it=m.begin(),itend=m.end();
     for (;it!=itend;++it)
       if (it->type!=_VECT || !is_integer_vecteur(*it->_VECTptr,intonly)) return false;
+    return true;
+  }
+
+  bool is_cinteger_matrice(const matrice & m){
+    const_iterateur it=m.begin(),itend=m.end();
+    for (;it!=itend;++it)
+      if (it->type!=_VECT || !is_cinteger_vecteur(*it->_VECTptr)) return false;
     return true;
   }
 
@@ -6489,7 +6509,39 @@ namespace giac {
 #define CLOCKS_PER_SEC 1e6
 #endif
   
+  // compute first prime suitable for padic linsolve
+  // returns true on success
+  bool padic_firstprime(const matrice & a,gen & p){
+    int as=a.size();
+#if 1 // def _I386_
+    double p0=3037000500./std::sqrt(double(as))/5.; // so that p0^2*rows(a)<2^63
+#else
+    double p0=46340./std::sqrt(double(as))/5.; // so that p0^2*rows(a)<2^31
+#endif
+    gen ainf=linfnorm(a,context0);
+    if (is_zero(ainf)){
+      p=0;
+      return true;
+    }
+    if (ainf.type==_INT_){ // insure that ||a||_inf*p*rows(a)<2^63
+      double p1=((((ulonglong) 1)<<63)/ainf.val)/as;
+      if (p1<p0)
+	p0=p1*0.99; // since we make a nextprime...
+    }
+    else { // insure that p^2*rows(a)*(2+ln(||a||_inf)/ln(p))<2^63
+      double n=std::ceil(mpz_sizeinbase(*ainf._ZINTptr,2)/21.); // assumes p>2^21
+      double p1=std::sqrt((1ULL << 62)/(n+2)/as);
+      if (p1<(1<<21))
+	return false;
+      if (p1<p0)
+	p0=p1*.9;
+    }
+    p=nextprime(int(p0));
+    return true;
+  }
+
 #ifndef GIAC_HAS_STO_38
+  
   static int mrref_int(const matrice & a, matrice & res, vecteur & pivots, gen & det,int l, int lmax, int c,int cmax,
 			int fullreduction,int dont_swap_below,bool convert_internal,int algorithm,int rref_or_det_or_lu,
 			int modular,vector<int> & permutation,
@@ -6507,33 +6559,13 @@ namespace giac {
       CERR << "rref padic hadamard done " << CLOCK()*1e-6 << '\n';
     gen p,det_mod_p,pi_p;
     int done=0;
-    bool failure=false;
     gen factdet(1); // find a divisor of the determinant
     // by solving a random linear system having a as matrix
-    // using a p-adic method 
-#if 1 // def _I386_
-    double p0=3037000500./std::sqrt(double(as))/5.; // so that p0^2*rows(a)<2^63
-#else
-    double p0=46340./std::sqrt(double(as))/5.; // so that p0^2*rows(a)<2^31
-#endif
-    gen ainf=linfnorm(a,context0);
-    if (is_zero(ainf)){
+    // using a p-adic method
+    bool failure=!padic_firstprime(a,p);
+    if (is_zero(p)){
       res=a; det=0; return 1;
     }
-    if (ainf.type==_INT_){ // insure that ||a||_inf*p*rows(a)<2^63
-      double p1=((((ulonglong) 1)<<63)/ainf.val)/as;
-      if (p1<p0)
-	p0=p1*0.99; // since we make a nextprime...
-    }
-    else { // insure that p^2*rows(a)*(2+ln(||a||_inf)/ln(p))<2^63
-      double n=std::ceil(mpz_sizeinbase(*ainf._ZINTptr,2)/21.); // assumes p>2^21
-      double p1=std::sqrt((1ULL << 62)/(n+2)/as);
-      if (p1<(1<<21))
-	failure=true;
-      if (p1<p0)
-	p0=p1*.9;
-    }
-    p=nextprime(int(p0));
     vector< vector<int> > N;
     if (!failure && modular==2){ // rref is like linsolve
       matrice A(mtran(a));
@@ -7076,7 +7108,7 @@ namespace giac {
     return status;
   }
 
-  bool remove_identity(matrice & res,GIAC_CONTEXT){
+  bool remove_identity(matrice & res,bool normalize,GIAC_CONTEXT){
     int s=int(res.size());
     // "shrink" res
     for (int i=0;i<s;++i){
@@ -7088,7 +7120,7 @@ namespace giac {
 	return false;
       gen tmp=new ref_vecteur(v.begin()+s,v.end());
       divvecteur(*tmp._VECTptr,v[i],*tmp._VECTptr);
-      res[i] = normal(tmp,contextptr);
+      res[i] = normalize?normal(tmp,contextptr):tmp;
     }
     return true;
   }
@@ -7109,6 +7141,16 @@ namespace giac {
 	    GIAC_CONTEXT){
     if (!ckmatrix(a))
       return 0;
+    // check for a matrix with coefficients in an alg. extension of Q 
+    int redtype=0;
+    if (!fullreduction_)
+      redtype=1;
+    if (rref_or_det_or_lu==1)
+      redtype=2;
+    else if (rref_or_det_or_lu==2)
+      redtype=3;
+    if (l==0 && c==0 && lmax==a.size() && cmax==a[0]._VECTptr->size() && algnum_rref(a,res,pivots,det,redtype,contextptr))
+      return 3;
     double eps=epsilon(contextptr);
     unsigned as=unsigned(a.size()),a0s=unsigned(a.front()._VECTptr->size());
     bool step_rref=false;
@@ -7662,7 +7704,7 @@ namespace giac {
     int ok=1;
     if (convert_internal){
       if (rm_idn_after){
-	if (!remove_identity(res,contextptr))
+	if (!remove_identity(res,false/* normalize*/,contextptr))
 	  return 0;
 	res = *(r2sym (res,lv,contextptr)._VECTptr);
 	res =*normal(res,contextptr)._VECTptr;
@@ -9816,7 +9858,7 @@ namespace giac {
   }
 
   bool remove_identity(matrice & res){
-    return remove_identity(res,context0);
+    return remove_identity(res,false,context0);
   }
 
   bool remove_identity(vector< vector<int> > & res,int modulo){
@@ -10602,8 +10644,10 @@ namespace giac {
     matrice c;
     matrice ab(a);
     ab.push_back(b);
-    if (is_exactly_zero(p))
-      p=36007;
+    if (is_exactly_zero(p)){
+      if (!padic_firstprime(a,p))
+        return -1;// p=36007;
+    }
     if (is_zero(h2))
       h2=4*square_hadamard_bound(ab);
     gen pip(1);
@@ -10621,12 +10665,8 @@ namespace giac {
     }
     if (debug_infolevel>2)
       CERR << "Modinv end " << CLOCK()*1e-6 << '\n';
-    unsigned n=1;
-    gen pn=p;
-    while (is_strictly_greater(h2,pn,context0)){ // ok
-      ++n;
-      pn = pn * p;
-    }
+    unsigned n=sizeinbase2(h2)/std::log(double(p.val))*std::log(2.0)+1;
+    gen pn=pow(p,int(n),context0);
     gen sqrtpn=isqrt(pn); // (pow(gen(p),int(n/2),context0)-1)/2;
     vecteur resp=padic_linsolve_c(a,b,c,n,p,reconstruct);
     if (debug_infolevel>2)
@@ -11638,7 +11678,7 @@ namespace giac {
       return false;
     if (debug_infolevel)
       CERR << CLOCK()*1e-6 << " remove identity" << '\n';
-    if (ok!=2 && !remove_identity(res,contextptr))
+    if (ok!=2 && !remove_identity(res,ok!=3,contextptr))
       return false;
     if (debug_infolevel)
       CERR << CLOCK()*1e-6 << " end matrix inv" << '\n';
@@ -13525,9 +13565,43 @@ namespace giac {
       res[1+i]=smod(-N[n-1][n-1-i],modulo);
   }
 
-  bool mod_pcar(vector< vector<int> > & N,int modulo,bool & krylov,vector<int> & res,GIAC_CONTEXT,bool compute_pmin){
+  struct thread_mod_pcar_t {
+    vector< vector<int> > * Nptr,*ttempptr;
+    int modulo;
+    bool krylov,compute_pmin,retval;
+    vector<int> * resptr;
+    const context * contextptr;
+  };
+
+  void * do_thread_mod_pcar(void * ptr_){
+    thread_mod_pcar_t * ptr=(thread_mod_pcar_t*) ptr_;
+    ptr->retval=mod_pcar(*ptr->Nptr,ptr->modulo,ptr->krylov,*ptr->resptr,ptr->contextptr,ptr->compute_pmin,*ptr->ttempptr);
+    return ptr_;
+  }
+
+  bool mod_pcar(vector< vector<int> > & N,int modulo,bool & krylov,vector<int> & res,GIAC_CONTEXT,bool compute_pmin,vector< vector<int> > & ttemp){
     int n=int(N.size());
     if (krylov){ // try Krylov pmin
+#if 1
+      if (ttemp.size()!=n)
+        ttemp=vector< vector<int> > (n,vector<int>(n+1));
+      vector<int> t0(n),t1(n);
+      for (int i=0;i<n;++i){
+	t0[i]=std_rand()%modulo;
+        ttemp[i][0]=t0[i];
+      }
+      // for very very large matrices (10^7 entries?) 
+      // it might be faster to compute
+      // N, N^2, (N^2)^2, etc. and compute Nv, N^2(v,Nv), N^4(v,Nv,N^2v,N^3v)...
+      for (int j=0;j<n;){
+	if (!multvectvector_int_vector_int(N,t0,modulo,t1))
+	  return false;
+        t0.swap(t1);
+        ++j;
+        for (int i=0;i<n;++i)
+          ttemp[i][j]=t0[i];
+      }
+#else
       vector< vector<int> > temp(n+1),ttemp; 
       vector<int> & t0=temp[0];
       t0.reserve(n);
@@ -13543,12 +13617,13 @@ namespace giac {
       if (debug_infolevel>2)
 	CERR << CLOCK()*1e-6 << " Charpoly mod " << modulo << " tran " << '\n';
       tran_vect_vector_int(temp,ttemp);
+#endif
       vecteur pivots;
       longlong det;
       vector<int> permutation,maxrankcol;
       if (debug_infolevel>2)
 	CERR << CLOCK()*1e-6 << " Charpoly mod " << modulo << " rref " << '\n';
-      smallmodrref(1,ttemp,pivots,permutation,maxrankcol,det,0,n,0,n+1,false/*full reduction */,0,modulo,2/* LU */,true,0,true,-1);
+      smallmodrref(1/* nthreads*/,ttemp,pivots,permutation,maxrankcol,det,0,n,0,n+1,false/*full reduction */,0,modulo,2/* LU */,true,0,true,-1);
       if (debug_infolevel>2)
 	CERR << CLOCK()*1e-6 << " Charpoly mod " << modulo << " det=" << det << " " << '\n';
       // If rank==n-1 extract the min polynomial and find charpoly using the trace
@@ -13667,12 +13742,12 @@ namespace giac {
     return true;
   }
     
-  bool mod_pcar(const matrice & A,vector< vector<int> > & N,int modulo,bool & krylov,vector<int> & res,GIAC_CONTEXT,bool compute_pmin){
+  bool mod_pcar(const matrice & A,vector< vector<int> > & N,int modulo,bool & krylov,vector<int> & res,GIAC_CONTEXT,bool compute_pmin,vector< vector<int> > & ttemp){
     if (debug_infolevel>2)
       CERR << CLOCK()*1e-6 << " Charpoly mod " << modulo << " A*v" << '\n';
     if (!vecteur2vectvector_int(A,modulo,N))
       return false;
-    return mod_pcar(N,modulo,krylov,res,contextptr,compute_pmin);
+    return mod_pcar(N,modulo,krylov,res,contextptr,compute_pmin,ttemp);
   }
 
   vecteur mpcar_int(const matrice & A,bool krylov,GIAC_CONTEXT,bool compute_pmin){
@@ -13706,13 +13781,84 @@ namespace giac {
     gen pip(currentp);
     double pipd=std::log10(pip.val/2+1.0);
     vector<int> modpcar;
-    vector< vector<int> > N;
-    if (!mod_pcar(A,N,currentp.val,krylov,modpcar,contextptr,compute_pmin))
+    vector< vector<int> > N,ttemp;
+    if (!mod_pcar(A,N,currentp.val,krylov,modpcar,contextptr,compute_pmin,ttemp))
       return vecteur(1,gensizeerr(contextptr));
     modpoly charpol;
     vector_int2vecteur(modpcar,charpol);
     int initial_clock=CLOCK();
     int dbglevel=debug_infolevel;
+#ifdef HAVE_LIBPTHREAD
+    // parallel using mod_pcar_t and pthread_create do_mod_pcar
+    int nthreads=threads_allowed?threads:1;
+    if (nthreads>1){
+      // initialization
+      pthread_t tab[nthreads];
+      vector< vector< vector<int> > > Ntab(nthreads,N),ttemptab(nthreads,ttemp);
+      vector< vector<int> > restab(nthreads,modpcar);
+      thread_mod_pcar_t pcarparam[nthreads];
+      for (int j=0;j<nthreads;++j){
+	thread_mod_pcar_t tmp={&Ntab[j],&ttemptab[j],0,krylov,compute_pmin,false,&restab[j],contextptr};
+	pcarparam[j]=tmp;
+      }
+      // main loop
+      for (;pipd < (testvalue=logbound*charpol.size()/(n+1.0));){
+        if (currentprob < proba &&  pipd<testvalue/1.33 && CLOCK()-initial_clock>min_proba_time*CLOCKS_PER_SEC)
+          break;
+        if (n>10 && dbglevel<2 && CLOCK()-initial_clock>60*CLOCKS_PER_SEC)
+          dbglevel=2;
+        if (dbglevel>1)
+          CERR << CLOCK()*1e-6 << " " << 100*pipd/testvalue << " % done" << (currentprob<proba?", stable.":", unstable.")<< '\n';
+        for (int j=0;j<nthreads;++j){
+          currentp=nextprime(currentp.val+2);
+          pcarparam[j].modulo=currentp.val;
+          bool res=true;
+          if (j<nthreads-1)
+            res=pthread_create(&tab[j],(pthread_attr_t *) NULL,do_thread_mod_pcar,(void *) &pcarparam[j]);
+          if (res)
+            do_thread_mod_pcar((void *)&pcarparam[j]);
+        }
+        for (int j=0;j<nthreads;++j){
+          void * ptr=(void *)&nthreads; // non-zero initialisation
+          if (j<nthreads-1)
+            pthread_join(tab[j],&ptr);
+        }
+        for (int j=0;j<nthreads;++j){
+          if (!pcarparam[j].retval)
+            return vecteur(1,gensizeerr(contextptr));
+          const vector<int> & modpcar=*pcarparam[j].resptr;
+          int currentp=pcarparam[j].modulo;
+          if (modpcar.size()<charpol.size())
+            continue;
+          if (modpcar.size()>charpol.size()){
+            vector_int2vecteur(modpcar,charpol);
+            pip=currentp;
+            continue;
+          }
+          bool stable;
+          int tmp;
+          if (pip.type==_ZINT && (tmp=ichinrem_inplace(charpol,modpcar,pip,currentp)) ){
+            stable=tmp==2;
+          } else {
+            modpoly newcharpol,currentcharpol;
+            vector_int2vecteur(modpcar,currentcharpol);
+            newcharpol=ichinrem(charpol,currentcharpol,pip,currentp);
+            stable=newcharpol==charpol;
+            charpol.swap(newcharpol);
+          }
+          if (stable)
+            currentprob=currentprob/currentp;
+          else 
+            currentprob=1.0;
+          pip=currentp*pip;
+          pipd += std::log10(double(currentp));
+        }
+      }
+      if (pipd<testvalue)
+        *logptr(contextptr) << gettext("Probabilistic answer. Run proba_epsilon:=0 for a certified result. Error <") << proba << '\n';
+      return charpol;
+    } // end nthreads>1
+#endif // PTHREAD
     for (;pipd < (testvalue=logbound*charpol.size()/(n+1.0));){
       if (currentprob < proba &&  pipd<testvalue/1.33 && CLOCK()-initial_clock>min_proba_time*CLOCKS_PER_SEC)
 	break;
@@ -13721,7 +13867,7 @@ namespace giac {
       if (dbglevel>1)
 	CERR << CLOCK()*1e-6 << " " << 100*pipd/testvalue << " % done" << (currentprob<proba?", stable.":", unstable.")<< '\n';
       currentp=nextprime(currentp.val+2);
-      if (!mod_pcar(A,N,currentp.val,krylov,modpcar,contextptr,compute_pmin))
+      if (!mod_pcar(A,N,currentp.val,krylov,modpcar,contextptr,compute_pmin,ttemp))
 	return vecteur(1,gensizeerr(contextptr));
       if (modpcar.size()<charpol.size())
 	continue;
@@ -13759,8 +13905,8 @@ namespace giac {
     bool krylov=true;
     if (modulo){
       vector<int> res; modpoly RES;
-      vector< vector<int> > N;
-      if (!mod_pcar(A,N,modulo,krylov,res,contextptr,false))
+      vector< vector<int> > N,ttemp;
+      if (!mod_pcar(A,N,modulo,krylov,res,contextptr,false,ttemp))
 	return vecteur(1,gensizeerr("Non integer cell in matrix"));
       vector_int2vecteur(res,RES);
       return RES;
@@ -13930,11 +14076,11 @@ namespace giac {
       gen mg=unmod(M);
       if (mg.type==_VECT){
 	matrice M1=*mg._VECTptr;
-	vector< vector<int> > N;
+	vector< vector<int> > N,ttemp;
 	int modulo=(p._MODptr+1)->val;
 	bool krylov=true;
 	vector<int> res;
-	if (mod_pcar(M1,N,modulo,krylov,res,contextptr,false)){
+	if (mod_pcar(M1,N,modulo,krylov,res,contextptr,false,ttemp)){
 	  vecteur w;
 	  vector_int2vecteur(res,w);
 	  w=*makemod(w,modulo)._VECTptr;
@@ -15136,6 +15282,28 @@ namespace giac {
   // return a vector which elements are the basis of the ker of a
   bool mker(const matrice & a,vecteur & v,int algorithm,GIAC_CONTEXT){
     v.clear();
+    if (is_cinteger_matrice(a)){ // quick modular check that ker is not empty
+      int L=a.size(),C=a.front()._VECTptr->size();
+      vector< vector<int> > A,V;
+      double p=((1LL<<62)-giac_rand(contextptr))/L/L;
+      p=std::sqrt(p)-1e5;
+      int modulo=nextprime(int(p)).val;
+      gen az(a);
+      if (!is_integer_matrice(a)){
+        while (modulo%4!=1){
+          modulo=nextprime(modulo+1).val;
+        }
+        int i=modsqrtminus1(modulo);
+        gen ar,ai;
+        reim(az,ar,ai,contextptr);
+        az=ar+i*ai;
+      }
+      vecteur2vectvector_int(*az._VECTptr,modulo,A);
+      if (mker(A,V,modulo)){
+        if (V.empty())
+          return true;
+      }
+    }
     gen det;
     vecteur pivots;
     matrice res;

@@ -12,9 +12,7 @@ pipeline {
             MAVEN = credentials('maven-repo')
           }
           steps {
-            bat "C:\\msys64\\usr\\bin\\env.exe MSYSTEM=CLANG32 C:\\msys64\\usr\\bin\\bash -l -c \"cd ${env.WORKSPACE.replace('\\','/').replace('C:','/c')}; bash ./recompile-msys.sh cbuild\""
             bat "C:\\msys64\\usr\\bin\\env.exe MSYSTEM=CLANG64 C:\\msys64\\usr\\bin\\bash -l -c \"cd ${env.WORKSPACE.replace('\\','/').replace('C:','/c')}; bash ./recompile-msys.sh cbuild64\""
-            bat './gradlew javagiacWin32JarClang --info'
             stash name: "giac-clang", includes: "cbuild*/**"
           }
           post {
@@ -24,6 +22,7 @@ pipeline {
         stage('Mac') {
           agent {label 'ios-test'}
           steps {
+            sh "rm src/giac/cpp/kdisplay.cc"
             sh "export ANDROID_SDK_ROOT=~/.android-sdk/; ./gradlew javagiacOsx_amd64SharedLibrary javagiacOsx_arm64SharedLibrary --info"
             sh "find ."
             stash name: 'giac-mac', includes: 'build/binaries/javagiacSharedLibrary/osx_x86-64/libjavagiac.jnilib'
@@ -50,6 +49,7 @@ pipeline {
             unstash name: 'giac-clang'
             unstash name: 'giac-mac'
             unstash name: 'giac-mac-arm64'
+            sh "rm src/giac/cpp/kdisplay.cc"
             sh '''
                export SVN_REVISION=`git log -1 | grep "\\S" | tail -n 1 | sed "s/.*@\\([0-9]*\\).*/\\1/"`
               ./gradlew downloadEmsdk installEmsdk activateEmsdk
@@ -66,6 +66,7 @@ pipeline {
             MAVEN = credentials('maven-repo')
           }
           steps {
+            sh "rm src/giac/cpp/kdisplay.cc"
             sh '''
                 export SVN_REVISION=`git log -1 | grep "\\S" | tail -n 1 | sed "s/.*@\\([0-9]*\\).*/\\1/"`
                 ./gradlew clean publishPodspec -Prevision=$SVN_REVISION'''

@@ -5705,6 +5705,10 @@ void yyfree (void * ptr , yyscan_t yyscanner)
   namespace giac {
 #endif // ndef NO_NAMESPACE_GIAC
 
+    bool tri (const std::pair<const char *,gen> & a ,const std::pair<const char *,gen> & b){
+      return strcmp(a.first, b.first) < 0;
+    }
+    
     // Set the input string
     // export GIAC_DEBUG=-2 to renew static_lexer.h/static_extern.h
     YY_BUFFER_STATE set_lexer_string(const std::string &s_orig,yyscan_t & scanner,GIAC_CONTEXT){
@@ -5956,6 +5960,8 @@ void yyfree (void * ptr , yyscan_t yyscanner)
 	    ++i;
 	    continue;
 	  }
+	  if ((unsigned char)s[i]==0xc2 && (unsigned char)s[i+1]!=0xb5) // µ
+            ss += "micro";
 	  if (i && (unsigned char)s[i]==0xc2 && (unsigned char)s[i+1]!=0xb0)
 	    ss += ' ';
 	  if ( (unsigned char)s[i]==0xef && i<l-3 ){

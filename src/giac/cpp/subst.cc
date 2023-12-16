@@ -457,7 +457,14 @@ namespace giac {
 
   static bool has_subst(const gen & e,const gen & i,const gen & newi,gen & newe,bool quotesubst,GIAC_CONTEXT){
     switch (e.type){
-    case _INT_: case _ZINT: case _CPLX: case _DOUBLE_: case _REAL: case _STRNG: case _MOD: case _SPOL1: case _USER:
+    case _INT_: case _ZINT: case _DOUBLE_: case _REAL: case _STRNG: case _MOD: case _SPOL1: case _USER: case _EXT:
+      return false;
+    case _CPLX:
+      if (i==cst_i){
+        newe=*e._CPLXptr+*(e._CPLXptr+1)*newi;
+        return true;
+      }
+      newe=e;
       return false;
     case _IDNT: case _FUNC:
       if (e==i){
@@ -531,7 +538,7 @@ namespace giac {
       }
       return subst(e,*i._VECTptr,*newi._VECTptr,quotesubst,contextptr);
     }
-    if (i.type!=_IDNT && i.type!=_SYMB && i.type!=_FUNC)
+    if (i.type!=_IDNT && i.type!=_SYMB && i.type!=_FUNC && i!=cst_i)
       *logptr(contextptr) << gettext("Warning, replacing ") << i << gettext(" by ") << newi << gettext(", a substitution variable should perhaps be purged.") << '\n';
     gen res;
     if (has_subst(e,i,newi,res,quotesubst,contextptr))
@@ -789,8 +796,14 @@ namespace giac {
       return e;
     int pos;
     switch (e.type){
-    case _INT_: case _ZINT: case _DOUBLE_: case _CPLX: case _REAL:
+    case _INT_: case _ZINT: case _DOUBLE_: case _REAL:
       return e;
+    case _CPLX:
+      pos=findpos(i,cst_i);
+      if (pos)
+	return *e._CPLXptr+*(e._CPLXptr+1)*newi[pos-1];
+      else
+	return e;      
     case _IDNT:
       pos=findpos(i,e);
       if (pos)
@@ -2341,6 +2354,8 @@ namespace giac {
     if (e_orig.type<=_POLY || is_inf(e_orig) || has_num_coeff(e_orig))
       return e_orig;
     gen e=simplifier(e_orig,contextptr);
+    if (algnum_normal(e,contextptr))
+      return e;
     if (e.type==_FRAC)
       return _evalc(e_orig,contextptr);
     // first check for a fractional power -> substitution
@@ -2476,11 +2491,22 @@ namespace giac {
 	*logptr(contextptr) << vabs2tmp << '\n';
 	return e_orig;
       }
-      // check for rootof?
       vabs2=vabs2tmp;
 #else
       vabs2=*tsimplify_common(vabs2,contextptr)._VECTptr;
 #endif
+      // check for rootof?
+      for (int i=0;i<int(vabs2.size());++i){
+        vecteur V=lop(vabs2[i],at_rootof);
+        for (int j=0;j<V.size();++j){
+          if (!lidnt(V[j]).empty()){
+            return e;
+            vabs.erase(vabs.begin()+i);
+            vabs2.erase(vabs2.begin()+i);
+            break;
+          }
+        }
+      }
       if (1){
 	int S=int(vabs2.size());
 	vector<int> base(S),expo(S);

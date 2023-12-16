@@ -2643,7 +2643,7 @@ namespace giac {
     if (g.type==_EXT){
       gen a,b;
       if (has_evalf(*g._EXTptr,a,level,contextptr) && has_evalf(*(g._EXTptr+1),b,level,contextptr)){
-	a=alg_evalf(a,b,contextptr);
+	a=alg_evalf(a,b,*(g._EXTptr+2),contextptr);
 	return a.type==_EXT?false:has_evalf(a,res,level,contextptr);
       }
       return false;
@@ -2752,7 +2752,10 @@ namespace giac {
 	return true;
       }
       if (_SYMBptr->sommet==at_rootof){
-	evaled=approx_rootof(_SYMBptr->feuille.evalf(level,contextptr),contextptr);
+        gen f=_SYMBptr->feuille;
+        if (f.type==_VECT && f._VECTptr->size()>2 && f[1].type!=_VECT)
+          f=makevecteur(makevecteur(1,0),f);
+	evaled=approx_rootof(f.evalf(level,contextptr),contextptr);
 	return true;
       }
       if (_SYMBptr->sommet==at_cell)
@@ -2786,7 +2789,7 @@ namespace giac {
     case _MOD: case _ROOT:
       return false; // replace in RPN mode
     case _EXT:
-      evaled=alg_evalf(_EXTptr->eval(level,contextptr),(_EXTptr+1)->eval(level,contextptr),contextptr);
+      evaled=alg_evalf(_EXTptr->eval(level,contextptr),(_EXTptr+1)->eval(level,contextptr),*(_EXTptr+2),contextptr);
       return true;
     case _POLY:
       evaled=apply(*_POLYptr,no_context_evalf);
@@ -4263,10 +4266,12 @@ namespace giac {
   }
 
   // workaround for intervals
-  static bool is_zero_or_contains(const gen & g,GIAC_CONTEXT){
+  bool is_zero_or_contains(const gen & g,GIAC_CONTEXT){
 #ifdef NO_RTTI
     return is_zero(g,contextptr);
 #else
+    if (g.type==_CPLX)
+      return is_zero_or_contains(*g._CPLXptr,contextptr) && is_zero_or_contains(*(g._CPLXptr+1),contextptr);
     if (is_zero(g,contextptr))
       return true;
     if (g.type!=_REAL)
@@ -4291,14 +4296,14 @@ namespace giac {
     if (is_zero_or_contains(realpart,contextptr)){
       if (is_zero_or_contains(imagpart,contextptr))
 	return undef;
-      return (cst_pi_over_2-atan(realpart/imagpart,contextptr))*sign(imagpart,contextptr);
+      return operator_plus(cst_pi_over_2,-atan(realpart/imagpart,contextptr),contextptr)*sign(imagpart,contextptr);
     }
     if (is_zero_or_contains(imagpart,contextptr))
-      return (1-sign(realpart,contextptr))*cst_pi_over_2+atan(imagpart/realpart,contextptr);
+      return operator_plus((1-sign(realpart,contextptr))*cst_pi_over_2,atan(imagpart/realpart,contextptr),contextptr);
     if ( (realpart.type==_DOUBLE_ || realpart.type==_FLOAT_) || (imagpart.type==_DOUBLE_ || imagpart.type==_FLOAT_) )
       return eval(atan(rdiv(imagpart,realpart,contextptr),contextptr)+(1-sign(realpart,contextptr))*sign(imagpart,contextptr)*evalf_double(cst_pi_over_2,1,contextptr),1,contextptr);
     else
-      return atan(rdiv(imagpart,realpart,contextptr),contextptr)+(1-sign(realpart,contextptr))*sign(imagpart,contextptr)*cst_pi_over_2;
+      return operator_plus(atan(rdiv(imagpart,realpart,contextptr),contextptr),(1-sign(realpart,contextptr))*sign(imagpart,contextptr)*cst_pi_over_2,contextptr);
   }
   
   static gen _VECTarg(const vecteur & a,GIAC_CONTEXT){
@@ -6783,6 +6788,18 @@ namespace giac {
 	}
 	return operator_times(base,base,contextptr);
       }
+      if (exponent.val%2==0 && base.is_symb_of_sommet(at_prod) && has_op(base,*at_pow)){
+        const gen & f=base._SYMBptr->feuille;
+        if (f.type==_VECT){
+          const vecteur & v=*f._VECTptr;
+          int s=v.size();
+          vecteur w(v);
+          for (int i=0;i<s;++i){
+            w[i]=pow(w[i],exponent,contextptr);
+          }
+          return symbolic(at_prod,gen(w,_SEQ__VECT));
+        }
+      }
     }
     if (is_undef(base))
       return base;
@@ -7034,7 +7051,7 @@ namespace giac {
 	   // && base.subtype==3
 	   ) 
 	  || base.type==_FLOAT_ || ( (base.type<_POLY || base.type==_FLOAT_) && (exponent.type==_REAL || exponent.type==_DOUBLE_ || exponent.type==_FLOAT_)))
-	return exp(exponent*log(base,contextptr),contextptr);
+	return exp(operator_times(exponent,log(base,contextptr),contextptr),contextptr);
       /* 
 	 if (base.is_symb_of_sommet(at_neg))
 	 return minus1pow(exponent)*pow(base._SYMBptr->feuille,exponent);
@@ -8745,7 +8762,9 @@ namespace giac {
 	return true;
       if (a.subtype!=b.subtype){
 	if ( (a.subtype==_MATRIX__VECT && b.subtype==0) ||
-	     (b.subtype==_MATRIX__VECT && a.subtype==0) )
+	     (b.subtype==_MATRIX__VECT && a.subtype==0) ||
+             (a.subtype==_SORTED__VECT && b.subtype==_SEQ__VECT) ||
+             (a.subtype==_SEQ__VECT && b.subtype==_SORTED__VECT))
 	  ; // don't consider them different
 	else
 	  return false;
@@ -9788,8 +9807,12 @@ namespace giac {
     else {
       if (has_inf_or_undef(i))
 	return undef;
-      if (*this==x__IDNT_e || *this==t__IDNT_e)
-	return i; // avoid warning for expressions used as function if var is x or t
+      if (*this==x__IDNT_e || *this==t__IDNT_e){
+        if (i.type==_IDNT && i._IDNTptr->quoted)
+          ; // for e.g. desolve(t*x'+x=0), we don't want x(t) to be evaled to t
+        else
+          return i; // avoid warning for expressions used as function if var is x or t
+      }
       return symb_of(*this,i);
     }
   }
@@ -9833,6 +9856,7 @@ namespace giac {
     case _CPLX: 
       {
 	gen a1=abs(*this,context0),a2=abs(other,context0);
+	//gen a1=squarenorm(context0),a2=other.squarenorm(context0);
 	if (a1!=a2)
 	  return is_strictly_greater(a1,a2,context0);
 	a1=re(context0);
@@ -10731,9 +10755,9 @@ namespace giac {
   static gen _CPLXgcd(const gen & a,const gen & b){ // a & b must be gen
     if (!is_cinteger(a) || !is_cinteger(b) )
       return plus_one;
-    gen acopy(a),bcopy(b),r;
+    gen acopy(a),bCopy(b),r;
     for (;;){
-      if (is_exactly_zero(bcopy)){
+      if (is_exactly_zero(bCopy)){
 	complex<double> c=gen2complex_d(acopy);
 	double d=arg(c);
 	int quadrant=int(std::floor((2*d)/M_PI));
@@ -10750,9 +10774,9 @@ namespace giac {
 	  return acopy;
 	}
       }
-      r=acopy%bcopy;
-      acopy=bcopy;
-      bcopy=r;
+      r=acopy%bCopy;
+      acopy=bCopy;
+      bCopy=r;
     }
   }
 
@@ -11144,7 +11168,7 @@ namespace giac {
     case _INT___CPLX: case _ZINT__CPLX: case _CPLX__CPLX:   
       return(a-b*iquo(a,b));
     case _VECT__VECT:
-      return (*a._VECTptr)%(*b._VECTptr);
+      return gen((*a._VECTptr)%(*b._VECTptr),_POLY1__VECT);
     default:
       return gentypeerr(gettext("%"));
     }

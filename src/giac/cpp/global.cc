@@ -213,7 +213,11 @@ int my_sprintf(char * s, const char * format, ...){
 #if defined(FIR) && !defined(FIR_LINUX)
   z = firvsprintf(s, format, ap);
 #else
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
   z = vsprintf(s, format, ap);
+  // z = vsnprintf(s, RAND_MAX,format, ap);
+#pragma clang diagnostic pop  
 #endif
   va_end(ap);
   return z;
@@ -1350,8 +1354,8 @@ bool dfu_check_epsilon2(const char * fname){
   srand(time(NULL));
   int i;
   for (i=0;i<n;++i){
-    int j=(rand()/(1.0+RAND_MAX))*n;
-    ptr[j]=rand();
+    int j=(std_rand()/(1.0+RAND_MAX))*n;
+    ptr[j]=std_rand();
   }
   for (i=0;i<n;++i){
     fputc(ptr[i],f);
@@ -1387,8 +1391,8 @@ bool dfu_check_apps2(const char * fname){
   srand(time(NULL));
   int i;
   for (i=0;i<n;++i){
-    int j=(rand()/(1.0+RAND_MAX))*n;
-    ptr[j]=rand();
+    int j=(giac::std_rand()/(1.0+RAND_MAX))*n;
+    ptr[j]=giac::std_rand();
   }
   for (i=0;i<n;++i){
     fputc(ptr[i],f);
@@ -2721,8 +2725,12 @@ extern "C" void Sleep(unsigned int miliSecond);
     return *ans;
   }
   vecteur & history_plot(GIAC_CONTEXT){
-    if (contextptr)
-      return *contextptr->history_plot_ptr;
+    if (contextptr){
+      vecteur * hist=contextptr->history_plot_ptr;
+      if (hist->size()>=256)
+        hist->erase(hist->begin(),hist->end()-128);
+      return *hist;
+    }
     else
       return _history_plot_();
   }
@@ -3657,6 +3665,8 @@ extern "C" void Sleep(unsigned int miliSecond);
   int MAX_PROD_EXPAND_SIZE=4096;
   int ABERTH_NMAX=25;
   int ABERTH_NBITSMAX=8192;
+  int LAZY_ALG_EXT=0;
+  int ALG_EXT_DIGITS=180;
 #if defined RTOS_THREADX || defined BESTA_OS || defined(KHICAS)
 #ifdef BESTA_OS
   int LIST_SIZE_LIMIT = 100000 ;
@@ -3693,6 +3703,7 @@ extern "C" void Sleep(unsigned int miliSecond);
   int GBASIS_DETERMINISTIC=20;
   int GBASISF4_MAX_TOTALDEG=1024;
   int GBASISF4_MAXITER=256;
+  int RUR_PARAM_MAX_DEG=128;
   // int GBASISF4_BUCHBERGER=5;
   const int BUFFER_SIZE=512;
 #else
@@ -3745,13 +3756,14 @@ extern "C" void Sleep(unsigned int miliSecond);
   int GBASIS_DETERMINISTIC=50;
   int GBASISF4_MAX_TOTALDEG=16384;
   int GBASISF4_MAXITER=1024;
+  int RUR_PARAM_MAX_DEG=128;
   // int GBASISF4_BUCHBERGER=5;
   const int BUFFER_SIZE=16384;
 #endif
   volatile bool ctrl_c=false,interrupted=false,kbd_interrupted=false;
 #ifdef GIAC_HAS_STO_38
-  double powlog2float=1e4;
-  int MPZ_MAXLOG2=8600; // max 2^8600 about 1K
+  double powlog2float=1e4*10; // increase max int size for HP Prime
+  int MPZ_MAXLOG2=8600*10; // max 2^8600 about 1K*10
 #else
   double powlog2float=1e8;
   int MPZ_MAXLOG2=80000000; // 100 millions bits
@@ -5844,7 +5856,7 @@ NULL,NULL,SW_SHOWNORMAL);
   }
 #else
 
-  bool make_thread(const gen & g,int level,const giac_callback & f,void * f_param,context * contextptr){
+  bool make_thread(const gen & g,int level,const giac_callback & f,void * f_param,const context * contextptr){
     return false;
   }
 
@@ -7585,6 +7597,10 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
   }
 #endif
 
+  bool my_isalpha(char c){
+    return (c>='a' && c<='z') || (c>='A' && c<='Z');
+  }
+
   int find_or_make_symbol(const string & s,gen & res,void * scanner,bool check38,GIAC_CONTEXT){
       int tmpo=opened_quote(contextptr);
       if (tmpo & 2)
@@ -7744,7 +7760,7 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
 	      string coeff;
 	      for (++i;i<ss;++i){
 		// up to next alphabetic char
-		if (s[i]>32 && isalpha(s[i])){
+		if (s[i]>32 && my_isalpha(s[i])){
 		  --i;
 		  break;
 		}
@@ -7862,7 +7878,7 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
 
   void convert_python(string & cur,GIAC_CONTEXT){
     bool indexshift=array_start(contextptr); //xcas_mode(contextptr)!=0 || abs_calc_mode(contextptr)==38;
-    if (cur[0]=='_' && (cur.size()==1 || !isalpha(cur[1])))
+    if (cur[0]=='_' && (cur.size()==1 || !my_isalpha(cur[1])))
       cur[0]='@'; // python shortcut for ans(-1)
     bool instring=cur.size() && cur[0]=='"';
     int openpar=0;
@@ -7933,7 +7949,7 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
 	++pos;
 	continue;
       }
-      if (curch=='=' && openpar==0 && prevch!='>' && prevch!='<' && prevch!='!' && prevch!=':' && prevch!=';' && prevch!='=' && prevch!='+' && prevch!='-' && prevch!='*' && prevch!='/' && prevch!='%' && (pos==int(cur.size())-1 || (cur[pos+1]!='=' && cur[pos+1]!='<'))){
+      if (curch=='=' && openpar==0 && prevch!='>' && prevch!='<' && prevch!='!' && prevch!=':' && prevch!=';' && prevch!='=' && prevch!='+' && prevch!='-' && prevch!='*' && prevch!='/' && prevch!='%' && (pos==int(cur.size())-1 || (cur[pos+1]!='=' && cur[pos+1]!='<' && cur[pos+1]!='>'))){
 	cur.insert(cur.begin()+pos,':');
 	++pos;
 	continue;
@@ -8126,7 +8142,7 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
       pythonmode=true;
       pythoncompat=true;
     }
-    if (s_orig[first]=='#' || (s_orig[first]=='_' && !isalpha(s_orig[first+1])) || s_orig.substr(first,4)=="from" || s_orig.substr(first,7)=="import " || s_orig.substr(first,4)=="def "){
+    if (s_orig[first]=='#' || (s_orig[first]=='_' && !my_isalpha(s_orig[first+1])) || s_orig.substr(first,4)=="from" || s_orig.substr(first,7)=="import " || s_orig.substr(first,4)=="def "){
       pythonmode=true;
       pythoncompat=true;
     }
@@ -8303,7 +8319,7 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
 	    if (p>0 && p<int(cur.size())){
 	      --p;
 	      // does cur[pos+1..p-1] look like a string?
-	      bool str=!isalpha(cur[q]) || !isalphan(cur[p]);
+	      bool str=!my_isalpha(cur[q]) || !isalphan(cur[p]);
 	      if (p && cur[p]=='.' && cur[p-1]>'9')
 		str=true;
 	      if (p-q>=minchar_for_quote_as_string(contextptr))
