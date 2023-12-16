@@ -2,7 +2,7 @@
 # Create *.out files from *.in files or run a regression test.
 # @author Zoltan Kovacs <zoltan@geogebra.org>
 
-MINIGIAC=../../build/install/minigiac/linux64/minigiac # FIXME, this is hardcoded
+MINIGIAC=../../build/exe/minigiac/minigiac # FIXME, this is hardcoded
 
 OVERWRITE=0
 TIMEOUT=480

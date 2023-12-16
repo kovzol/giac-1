@@ -856,7 +856,7 @@ task publishPodspec(dependsOn: ['installGems', 'createPodspec', 'publishMavenZip
     commandLine 'bundle', 'exec', 'pod', 'repo', 'push', 'geogebra', "${buildDir}/cocoapods/Giac.podspec", '--allow-warnings'
 }
 
-task installMinigiacExecutable (dependsOn: 'installMinigiacLinux64Executable')
+task installMinigiacExecutable (dependsOn: 'minigiacExecutable')
 
 task installNodegiacExecutable (type: Exec) {
     // FIXME: dependencies should be set
@@ -910,7 +910,7 @@ task androidCopyArm64LibjavagiacSo (dependsOn: 'javagiacAndroidarm64SharedLibrar
 
 task run (dependsOn: 'installMinigiacExecutable', type: Exec) {
     description "Runs Giac's minigiac terminal"
-    commandLine "build/install/minigiac/linux64/minigiac" // FIXME, this is hardcoded
+    commandLine "build/exe/minigiac/minigiac" // FIXME, this is hardcoded
     standardInput = System.in
 }
 

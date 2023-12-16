@@ -35,7 +35,7 @@ jobs:
     - name: prerequisites
       run: sudo apt update && sudo apt install build-essential libgmp-dev libmpfr-dev default-jdk
     - name: build
-      run: ./gradlew installMinigiacLinux64Executable
+      run: ./gradlew minigiacExecutable
 
   linux-native-cmake:
     runs-on: ubuntu-latest
