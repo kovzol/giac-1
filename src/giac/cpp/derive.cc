@@ -517,6 +517,8 @@ namespace giac {
   }
 
   gen derive(const gen & e,const identificateur & i,GIAC_CONTEXT){
+    if (is_undef(e) || is_inequation(e))
+      return undef;
     if (abs_calc_mode(contextptr)==38 && i.id_name[0]>='A' && i.id_name[0]<='Z'){
       identificateur tmp("xdiff");
       gen ee=subst(e,i,tmp,true,contextptr);
@@ -544,7 +546,7 @@ namespace giac {
       return res;
     }
     case _FRAC:
-      return fraction(derive(e._FRACptr->num,i,contextptr)*e._FRACptr->den-(e._FRACptr->num)*derive(e._FRACptr->den,i,contextptr),e._FRACptr->den);
+      return fraction(derive(e._FRACptr->num,i,contextptr)*e._FRACptr->den-(e._FRACptr->num)*derive(e._FRACptr->den,i,contextptr),pow(e._FRACptr->den,2,contextptr));
     case _EXT:
       if (is_zero(derive(*(e._EXTptr+1),i,contextptr)))
 	return algebraic_EXTension(derive(*e._EXTptr,i,contextptr),*(e._EXTptr+1));
@@ -981,7 +983,10 @@ namespace giac {
       ndiff=g.val;
     }
     gen eq(remove_equal(args._VECTptr->front())),x((*args._VECTptr)[1]),y((*args._VECTptr)[2]);
-    gen yprime=-derive(eq,x,contextptr)/derive(eq,y,contextptr);
+    gen dy=derive(eq,y,contextptr);
+    if (is_squarematrix(dy))
+      dy=mtran(*dy._VECTptr);
+    gen yprime=-inv(dy,contextptr)*derive(eq,x,contextptr);
     if (ndiff==1)
       return yprime;
     gen yn=yprime;
