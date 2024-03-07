@@ -40,6 +40,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(minigiac)
 
+option(VCL2 "Use vectorclass version 2 to speed up some heavy computations" OFF)
+
 if(UNIX AND NOT APPLE)
     set(LINUX TRUE)
 endif()
@@ -101,8 +103,8 @@ if(WIN32)
     endif()
 endif()
 
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_FLAGS "-fpermissive -std=c++0x")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_FLAGS "-fpermissive -std=c++17")
 
 set(GIAC_SOURCES
         src/giac/cpp/alg_ext.cc
@@ -255,6 +257,10 @@ include_directories(src/giac/headers)
 add_definitions(-DHAVE_NO_HOME_DIRECTORY -DGIAC_GGB -DIN_GIAC -DHAVE_LIB_PTHREAD
         -DGIAC_GENERIC_CONSTANTS -DTIMEOUT
         -DHAVE_LIBMPFR -DVERSION="1.9.0") # Version number seems hardwired, FIXME.
+
+if(VCL2)
+    add_definitions(-DHAVE_VCL2_VECTORCLASS_H -march=native) # vectorclass support
+endif(VCL2)
 
 add_executable(minigiac
         ${GIAC_SOURCES}
