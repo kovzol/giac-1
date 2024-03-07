@@ -658,11 +658,12 @@ void tar_fillheader(char * buffer,size_t offset,int exec=0){
 // flash version
 int flash_adddata(const char * buffer_,const char * filename,const char * data,size_t datasize,int exec){
   vector<fileinfo_t> finfo=tar_fileinfo(buffer_,numworks_maxtarsize);
-  size_t s=finfo.size();
-  if (s==0) return 0;
-  fileinfo_t last=finfo[s-1];
-  size_t offset=last.header_offset;
-  offset += tar_filesize(last.size);
+  size_t s=finfo.size(),offset=0;
+  if (s){
+    fileinfo_t last=finfo[s-1];
+    offset=last.header_offset;
+    offset += tar_filesize(last.size);
+  }
   if (offset+1024+datasize>numworks_maxtarsize) return 0;
   buffer_ += offset;
   char * nxt=(char *) ((((size_t) buffer_)/buflen +1)*buflen);
@@ -711,11 +712,12 @@ int flash_adddata(const char * buffer_,const char * filename,const char * data,s
 int tar_adddata(char * & buffer,size_t * buffersizeptr,const char * filename,const char * data,size_t datasize,int exec){
   size_t buffersize=buffersizeptr?*buffersizeptr:0;
   vector<fileinfo_t> finfo=tar_fileinfo(buffer,buffersize);
-  size_t s=finfo.size();
-  if (s==0) return 0;
-  fileinfo_t last=finfo[s-1];
-  size_t offset=last.header_offset;
-  offset += tar_filesize(last.size);
+  size_t s=finfo.size(),offset=0;
+  if (s){
+    fileinfo_t last=finfo[s-1];
+    offset=last.header_offset;
+    offset += tar_filesize(last.size);
+  }
   buffersize=offset;
   size_t newsize=offset+1024+datasize;
   newsize=10240*((newsize+10239)/10240);
@@ -868,6 +870,8 @@ const char * tar_loadfile(const char * buffer,const char * filename,size_t * len
     if (f.filename==filename){
       if (len)
 	*len=f.size;
+      else
+        return "";
       return buffer+f.header_offset+512;
     }
   }
@@ -1109,7 +1113,7 @@ char * file_gettar_aligned(const char * filename,char * & freeptr){
   }
   fclose(f);
   size=res.size();
-  if (size<numworks_maxtarsize)
+  if (size>numworks_maxtarsize)
     size=numworks_maxtarsize;
   memcpy(buffer,&res.front(),size);
   return buffer;
@@ -1986,7 +1990,7 @@ namespace giac {
     // return _access(path, mode );
     return 0;
   }
-#if (defined RTOS_THREADX || defined VISUALC) && !defined FREERTOS
+#if (defined RTOS_THREADX || defined VISUALC) && !defined FREERTOS && !defined WIN32
 extern "C" void Sleep(unsigned int miliSecond);
 #endif
 
@@ -3649,11 +3653,11 @@ extern "C" void Sleep(unsigned int miliSecond);
   // gbasis max number of pairs by F4 iteration
   // setting to 2000 accelerates cyclic9mod but cyclic9 would be slower
   // 32768 is enough for cyclic10mod without truncation and not too large for yang1
-  unsigned simult_primes=16,simult_primes2=16,simult_primes3=16,simult_primes_seuil2=-1,simult_primes_seuil3=-1; 
+  unsigned simult_primes=20,simult_primes2=20,simult_primes3=20,simult_primes_seuil2=-1,simult_primes_seuil3=-1; 
   // gbasis modular algorithm on Q: simultaneous primes (more primes means more parallel threads but also more memory required)
   double gbasis_reinject_ratio=0.2;
   // gbasis modular algo on Q: if new basis element exceed this ratio, new elements are reinjected in the ideal generators for the remaining computations
-  double gbasis_reinject_speed_ratio=1/6.;
+  double gbasis_reinject_speed_ratio=1./8; // modified from 1/6. for cyclic8
   // gbasis modular algo on Q: new basis elements are reinjected if the 2nd run with learning CPU speed / 1st run without learning CPU speed is >=
   int gbasis_logz_age_sort=0,gbasis_stop=0;
   // rur_do_gbasis==-1 no gbasis Q recon for rur, ==0 always gbasis Q recon, >0 size limit in monomials of the gbasis for gbasis Q recon
@@ -4931,6 +4935,8 @@ extern "C" void Sleep(unsigned int miliSecond);
       browser="mozilla";
       if (!access("/usr/bin/dillo",R_OK))
 	browser="dillo";
+      if (!access("/usr/bin/xdg-open",R_OK))
+        browser="xdg-open";
       if (!access("/usr/bin/chromium",R_OK))
 	browser="chromium";
       if (!access("/usr/bin/firefox",R_OK))
@@ -4946,7 +4952,9 @@ extern "C" void Sleep(unsigned int miliSecond);
     ++i;
     string browsersub=browser.substr(i,bs-i);
     if (s[0]!='\'') s='\''+s+'\'';
-    if (browsersub=="mozilla" || browsersub=="mozilla-bin" || browsersub=="firefox" || browsersub=="chromium"){
+    if (browsersub=="mozilla" || browsersub=="mozilla-bin"
+        //|| browsersub=="firefox"
+        || browsersub=="chromium"){
       s="if ! "+browser+" -remote \"openurl("+s+")\" ; then "+browser+" "+s+" & fi &";
     }
     else

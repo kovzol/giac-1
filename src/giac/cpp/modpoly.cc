@@ -54,8 +54,12 @@ using namespace std;
 // vector class version 1 by Agner Fog https://github.com/vectorclass
 // this might be faster for CPU with AVX512DQ instruction set
 // (fast multiplication of Vec4q)
-#ifdef HAVE_VCL1_VECTORCLASS_H 
-#include <vcl1/vectorclass.h>
+#if defined HAVE_VCL2_VECTORCLASS_H 
+// https://github.com/vectorclass, compile with -mavx2 -mfma 
+#include <vcl2/vectorclass.h>
+#ifdef __AVX2__
+#define CPU_SIMD
+#endif
 #endif
 
 #ifndef NO_NAMESPACE_GIAC
@@ -4681,7 +4685,7 @@ namespace giac {
 #ifdef GIAC_LLPRECOND
     longlong N=W.size()/2;
     fft_rev1(a+1,a+N-1,p);
-    fft_rev1(a+N+1,a+2*N-1,1);
+    fft_rev1(a+N+1,a+2*N-1,1); // last arg 1 or p??
 #else
     fft_rev1(a+1,a+W.size()-1,p);
 #endif
@@ -5845,7 +5849,7 @@ namespace giac {
     int * a=&W.front();
     int N=W.size()/2;
     fft_rev1(a+1,a+N-1,p);
-    fft_rev1(a+N+1,a+2*N-1,1);
+    fft_rev1(a+N+1,a+2*N-1,1); // last arg 1 or p??
   }
 
   void fft2wp(vector<int> & W,int n,int w,int p){
@@ -12931,7 +12935,7 @@ namespace giac {
 	fft_loop_p_precond_(&Aeff[3],&An2[3],Weff[3],Weff[7],p);
 	Aeff+=4; An2+=4; Weff+=8;
 	for (;Aeff<Aend;){
-#if 0 // def HAVE_VCL1_VECTORCLASS_H 
+#if 0 // def CPU_SIMD
 	  Vec4ui A4,An4,B4;
 	  Vec4uq C4;
 	  A4.load(Aeff);
@@ -12949,7 +12953,7 @@ namespace giac {
 	  An4 += ( (Vec4i) An4>>31)&p; 
 	  An4.store(An2);
 	  Aeff+=4; An2+=4; Weff+=8; continue;
-#endif // VECTORCLASS_H
+#endif // CPU_SIMD
 	  fft_loop_p_precond_(&Aeff[0],&An2[0],Weff[0],Weff[4],p);
 	  fft_loop_p_precond_(&Aeff[1],&An2[1],Weff[1],Weff[5],p);
 	  fft_loop_p_precond_(&Aeff[2],&An2[2],Weff[2],Weff[6],p);
@@ -13045,7 +13049,7 @@ namespace giac {
       fft_loop_p_(Acur,An2cur,Wcur,n2,p,invp);
       ++Acur;++An2cur; Wcur += step;
       // continue;
-#if 0 // def HAVE_VCL1_VECTORCLASS_H // debug
+#if 0 // def CPU_SIMD// debug
       A4.load(Acur-4);
       An4.load(An2cur-4);
       if ( horizontal_count(An4==compress(C4))!=4 || horizontal_count(A4==compress(B4))!=4)
@@ -14024,7 +14028,7 @@ namespace giac {
 	makepositive(&fftmult_p.front(),as,p4);
 	makepositive(&fftmult_q.front(),bs,p4);
       }
-      if (W.empty() || W[0]==0){ 
+      if (1 || W.empty() || W[0]==0){ // always called because fft_reverse does not work with p4 see below
 	W.clear();
 	fft2wp4(W,n,w);
       }
@@ -14033,10 +14037,11 @@ namespace giac {
       for (int i=0;i<n;++i){
 	fftmult_p[i]=mulmodp4(fftmult_p[i],fftmult_q[i]);
       }
-      fft_reverse(W,p4);
-      // w=invmod(w,p4); if (w<0) w+=p4; W.clear(); fft2wp4(W,n,w);
+      //fft_reverse(W,p4);
+      // fft_reverse call does not work, because it introduces negatives values that are not reset to positive in fft_loop_p1/2/3 by precond_mulmodp1/2/3 before addmod is called, leading to integer overflow
+      w=invmod(w,p4); if (w<0) w+=p4; W.clear(); fft2wp4(W,n,w);
       fft2p4nopermbefore(&fftmult_p.front(),n,&W.front());
-      fft_reverse(W,p4);
+      //fft_reverse(W,p4);
       fftmult_p.resize(rs);
       if (dividebyn){
 	int ninv=invmod(n,p4); if (ninv<0) ninv+=p4;
@@ -15362,7 +15367,7 @@ namespace giac {
 	  // unless an additional reduction modulo p1/p2/p3 is done
 	  // after reduction modulo modulo in the recursive call
 	  // because e.g. submod might return a negative number
-	  if (0 && logrs<=25 && prime==p3 && nprimes==0) 
+	  if (logrs<=25 && prime==p3 && nprimes==0) 
 	    prime=p4;//int(std::sqrt(1.8e18/mindeg));
           // FIXME using prime p4 fails for bugfft 
           // -*-: mode:text -*-

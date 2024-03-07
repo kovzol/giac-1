@@ -64,8 +64,12 @@ using namespace std;
 // vector class version 1 by Agner Fog https://github.com/vectorclass
 // this might be faster for CPU with AVX512DQ instruction set
 // (fast multiplication of Vec4q)
-#ifdef HAVE_VCL1_VECTORCLASS_H 
-#include <vcl1/vectorclass.h>
+#if defined HAVE_VCL2_VECTORCLASS_H 
+// https://github.com/vectorclass, compile with -mavx2 -mfma 
+#include <vcl2/vectorclass.h>
+#ifdef __AVX2__
+#define CPU_SIMD
+#endif
 #endif
 
 // Apple has the Accelerate framework for lapack if you did not install Atlas/lapack
@@ -3621,8 +3625,8 @@ namespace giac {
   }
   
 #if 1 // ndef GIAC_HAS_STO_38
-  const int mmult_double_blocksize=45; // 2*45^2*sizeof(double)= a little less than 32K
-  int mmult_int_blocksize=60; // 2*60^2*sizeof(int)= a little less than 32K
+  const int mmult_double_blocksize=44; // 2*45^2*sizeof(double)= a little less than 32K
+  int mmult_int_blocksize=64; // 2*64^2*sizeof(int)= a little less than 32K
   gen _blockmatrix_mult_size(const gen & args,GIAC_CONTEXT){
     if (args.type==_VECT && args._VECTptr->empty())
       return mmult_int_blocksize;
@@ -3641,74 +3645,70 @@ namespace giac {
     for (int a=a0;a<a1;++a){
       const vector<giac_double> & Aa=A[a];
       vector<giac_double> & Ca=C[a+c0];
-      matrix_double::const_iterator it=Btran.begin()+b0,itend=Btran.begin()+b1-5;
+      matrix_double::const_iterator it=Btran.begin()+b0,itend=Btran.begin()+b1-4;
       vector<giac_double>::iterator jt=Ca.begin()+b0+c1;
       for (;it<=itend;){
-	giac_double t0=0.0,t1=0.0,t2=0.0,t3=0.0,t4=0.0;
+	giac_double t0=0.0,t1=0.0,t2=0.0,t3=0.0;
 	const giac_double * i=&Aa[i0+delta], *iend=i+(i1-i0);
 	const giac_double *j0=&(*it)[i0];++it; 
 	const giac_double *j1=&(*it)[i0];++it;
 	const giac_double *j2=&(*it)[i0];++it;
 	const giac_double *j3=&(*it)[i0];++it;
-	const giac_double *j4=&(*it)[i0];++it;
 #if 1	
-	for (;i<iend-4;j0+=5,j1+=5,j2+=5,j3+=5,j4+=5,i+=5){
+	for (;i<=iend-4;j0+=4,j1+=4,j2+=4,j3+=4,i+=4){
+#ifdef CPU_SIMD
+	  Vec4d U,J0,J1,J2,J3;
+	  U.load(i);
+	  J0.load(j0); J1.load(j1); J2.load(j2); J3.load(j3);
+	  t0 += horizontal_add(U*J0);
+	  t1 += horizontal_add(U*J1);
+	  t2 += horizontal_add(U*J2);
+	  t3 += horizontal_add(U*J3);
+#else
 	  giac_double u = *i;
 	  t0 += u*(*j0);
 	  t1 += u*(*j1);
 	  t2 += u*(*j2);
 	  t3 += u*(*j3);
-	  t4 += u*(*j4);
 	  u = i[1];
 	  t0 += u*(j0[1]);
 	  t1 += u*(j1[1]);
 	  t2 += u*(j2[1]);
 	  t3 += u*(j3[1]);
-	  t4 += u*(j4[1]);
 	  u = i[2];
 	  t0 += u*(j0[2]);
 	  t1 += u*(j1[2]);
 	  t2 += u*(j2[2]);
 	  t3 += u*(j3[2]);
-	  t4 += u*(j4[2]);
 	  u = i[3];
 	  t0 += u*(j0[3]);
 	  t1 += u*(j1[3]);
 	  t2 += u*(j2[3]);
 	  t3 += u*(j3[3]);
-	  t4 += u*(j4[3]);
-	  u = i[4];
-	  t0 += u*(j0[4]);
-	  t1 += u*(j1[4]);
-	  t2 += u*(j2[4]);
-	  t3 += u*(j3[4]);
-	  t4 += u*(j4[4]);
+#endif
 	}
 #endif
-	for (;i<iend;++j0,++j1,++j2,++j3,++j4,++i){
+	for (;i<iend;++j0,++j1,++j2,++j3,++i){
 	  giac_double u = *i;
 	  t0 += u*(*j0);
 	  t1 += u*(*j1);
 	  t2 += u*(*j2);
 	  t3 += u*(*j3);
-	  t4 += u*(*j4);
 	}
 	if (add){
 	  *jt+=t0; ++jt;
 	  *jt+=t1; ++jt;
 	  *jt+=t2; ++jt;
 	  *jt+=t3; ++jt;
-	  *jt+=t4; ++jt;
 	}
 	else {
 	  *jt-=t0; ++jt;
 	  *jt-=t1; ++jt;
 	  *jt-=t2; ++jt;
 	  *jt-=t3; ++jt;
-	  *jt-=t4; ++jt;
 	}
       }
-      itend +=5;
+      itend +=4;
       for (;it<itend;++it){
 	giac_double t=0.0;
 	const giac_double * i=&Aa[i0+delta], *iend=i+(i1-i0), *j=&(*it)[i0];
@@ -3733,10 +3733,9 @@ namespace giac {
     for (int a=a0;a<a1;++a){
       const vector<int> & Aa=A[a];
       vector<int> & Ca=C[a+c0];
-      vector< vector<int> >::const_iterator it=Btran.begin()+b0,itend=Btran.begin()+b1-6;
+      vector< vector<int> >::const_iterator it=Btran.begin()+b0,itend=Btran.begin()+b1-8;
       vector<int>::iterator jt=Ca.begin()+b0+c1;
       for (;it<=itend;){
-	longlong t0=0,t1=0,t2=0,t3=0,t4=0,t5=0;
 	const int * i=&Aa[i0+delta], *iend=i+(i1-i0);
 	const int *j0=&(*it)[i0];++it; 
 	const int *j1=&(*it)[i0];++it;
@@ -3744,7 +3743,65 @@ namespace giac {
 	const int *j3=&(*it)[i0];++it;
 	const int *j4=&(*it)[i0];++it;
 	const int *j5=&(*it)[i0];++it;
-	for (;i<iend-5;j0+=6,j1+=6,j2+=6,j3+=6,j4+=6,j5+=6,i+=6){
+	const int *j6=&(*it)[i0];++it;
+	const int *j7=&(*it)[i0];++it;
+	longlong t0=0,t1=0,t2=0,t3=0,t4=0,t5=0,t6=0,t7=0;
+#ifdef CPU_SIMD
+#if 0 // for 512 bits SIMD registers, faster only if AVX512 is available
+	for (;i<=iend-8;j0+=8,j1+=8,j2+=8,j3+=8,j4+=8,j5+=8,j6+=8,j7+=8,i+=8){
+	  Vec8i u; Vec8q U;
+	  Vec8i J0,J1,J2,J3,J4,J5,J6,J7;
+	  u.load(i);  U=extend(u);
+	  J0.load(j0); J1.load(j1); J2.load(j2); J3.load(j3);
+	  J4.load(j4); J5.load(j5); J6.load(j6); J7.load(j7);
+	  t0 += horizontal_add(U*extend(J0));
+	  t1 += horizontal_add(U*extend(J1));
+	  t2 += horizontal_add(U*extend(J2));
+	  t3 += horizontal_add(U*extend(J3));
+	  t4 += horizontal_add(U*extend(J4));
+	  t5 += horizontal_add(U*extend(J5));
+	  t6 += horizontal_add(U*extend(J6));
+	  t7 += horizontal_add(U*extend(J7));
+	}
+#else // 512bits
+	Vec4q T0(0),T1(0),T2(0),T3(0),T4(0),T5(0),T6(0),T7(0);
+	for (;i<=iend-8;j0+=8,j1+=8,j2+=8,j3+=8,j4+=8,j5+=8,j6+=8,j7+=8,i+=8){
+	  Vec4i u; Vec4q U;
+	  Vec4i J0,J1,J2,J3,J4,J5,J6,J7;
+	  u.load(i);  U=extend(u);
+	  J0.load(j0); J1.load(j1); J2.load(j2); J3.load(j3);
+	  J4.load(j4); J5.load(j5); J6.load(j6); J7.load(j7);
+	  T0 += U*extend(J0);
+	  T1 += U*extend(J1);
+	  T2 += U*extend(J2);
+	  T3 += U*extend(J3);
+	  T4 += U*extend(J4);
+	  T5 += U*extend(J5);
+	  T6 += U*extend(J6);
+	  T7 += U*extend(J7);
+	  u.load(i+4);  U=extend(u);
+	  J0.load(j0+4); J1.load(j1+4); J2.load(j2+4); J3.load(j3+4);
+	  J4.load(j4+4); J5.load(j5+4); J6.load(j6+4); J7.load(j7+4);
+	  T0 += U*extend(J0);
+	  T1 += U*extend(J1);
+	  T2 += U*extend(J2);
+	  T3 += U*extend(J3);
+	  T4 += U*extend(J4);
+	  T5 += U*extend(J5);
+	  T6 += U*extend(J6);
+	  T7 += U*extend(J7);
+	}
+	t0 = horizontal_add(T0);
+	t1 = horizontal_add(T1);
+	t2 = horizontal_add(T2);
+	t3 = horizontal_add(T3);
+	t4 = horizontal_add(T4);
+	t5 = horizontal_add(T5);
+	t6 = horizontal_add(T6);
+	t7 = horizontal_add(T7);
+#endif // 512bits
+#else // CPU_SIMD
+	for (;i<=iend-8;j0+=8,j1+=8,j2+=8,j3+=8,j4+=8,j5+=8,j6+=8,j7+=8,i+=8){
 	  longlong u = *i;
 	  t0 += u*(*j0);
 	  t1 += u*(*j1);
@@ -3752,6 +3809,8 @@ namespace giac {
 	  t3 += u*(*j3);
 	  t4 += u*(*j4);
 	  t5 += u*(*j5);
+	  t6 += u*(*j6);
+	  t7 += u*(*j7);
 	  u = i[1];
 	  t0 += u*(j0[1]);
 	  t1 += u*(j1[1]);
@@ -3759,6 +3818,8 @@ namespace giac {
 	  t3 += u*(j3[1]);
 	  t4 += u*(j4[1]);
 	  t5 += u*(j5[1]);
+	  t6 += u*(j6[1]);
+	  t7 += u*(j7[1]);
 	  u = i[2];
 	  t0 += u*(j0[2]);
 	  t1 += u*(j1[2]);
@@ -3766,6 +3827,8 @@ namespace giac {
 	  t3 += u*(j3[2]);
 	  t4 += u*(j4[2]);
 	  t5 += u*(j5[2]);
+	  t6 += u*(j6[2]);
+	  t7 += u*(j7[2]);
 	  u = i[3];
 	  t0 += u*(j0[3]);
 	  t1 += u*(j1[3]);
@@ -3773,6 +3836,8 @@ namespace giac {
 	  t3 += u*(j3[3]);
 	  t4 += u*(j4[3]);
 	  t5 += u*(j5[3]);
+	  t6 += u*(j6[3]);
+	  t7 += u*(j7[3]);
 	  u = i[4];
 	  t0 += u*(j0[4]);
 	  t1 += u*(j1[4]);
@@ -3780,6 +3845,8 @@ namespace giac {
 	  t3 += u*(j3[4]);
 	  t4 += u*(j4[4]);
 	  t5 += u*(j5[4]);
+	  t6 += u*(j6[4]);
+	  t7 += u*(j7[4]);
 	  u = i[5];
 	  t0 += u*(j0[5]);
 	  t1 += u*(j1[5]);
@@ -3787,8 +3854,29 @@ namespace giac {
 	  t3 += u*(j3[5]);
 	  t4 += u*(j4[5]);
 	  t5 += u*(j5[5]);
+	  t6 += u*(j6[5]);
+	  t7 += u*(j7[5]);
+	  u = i[6];
+	  t0 += u*(j0[6]);
+	  t1 += u*(j1[6]);
+	  t2 += u*(j2[6]);
+	  t3 += u*(j3[6]);
+	  t4 += u*(j4[6]);
+	  t5 += u*(j5[6]);
+	  t6 += u*(j6[6]);
+	  t7 += u*(j7[6]);
+	  u = i[7];
+	  t0 += u*(j0[7]);
+	  t1 += u*(j1[7]);
+	  t2 += u*(j2[7]);
+	  t3 += u*(j3[7]);
+	  t4 += u*(j4[7]);
+	  t5 += u*(j5[7]);
+	  t6 += u*(j6[7]);
+	  t7 += u*(j7[7]);
 	}
-	for (;i<iend;++j0,++j1,++j2,++j3,++j4,++j5,++i){
+#endif
+	for (;i<iend;++j0,++j1,++j2,++j3,++j4,++j5,++j6,++j7,++i){
 	  longlong u = *i;
 	  t0 += u*(*j0);
 	  t1 += u*(*j1);
@@ -3796,6 +3884,8 @@ namespace giac {
 	  t3 += u*(*j3);
 	  t4 += u*(*j4);
 	  t5 += u*(*j5);
+	  t6 += u*(*j6);
+	  t7 += u*(*j7);
 	}
 	if (add){
 	  if (p){
@@ -3805,6 +3895,8 @@ namespace giac {
 	    *jt = (*jt+t3)%p; ++jt;
 	    *jt = (*jt+t4)%p; ++jt;
 	    *jt = (*jt+t5)%p; ++jt;
+	    *jt = (*jt+t6)%p; ++jt;
+	    *jt = (*jt+t7)%p; ++jt;
 	  }
 	  else {
 	    *jt+=t0; ++jt;
@@ -3813,6 +3905,8 @@ namespace giac {
 	    *jt+=t3; ++jt;
 	    *jt+=t4; ++jt;
 	    *jt+=t5; ++jt;
+	    *jt+=t6; ++jt;
+	    *jt+=t7; ++jt;
 	  }
 	}
 	else {
@@ -3823,6 +3917,8 @@ namespace giac {
 	    *jt = (*jt-t3)%p; ++jt;
 	    *jt = (*jt-t4)%p; ++jt;
 	    *jt = (*jt-t5)%p; ++jt;
+	    *jt = (*jt-t6)%p; ++jt;
+	    *jt = (*jt-t7)%p; ++jt;
 	  }
 	  else {
 	    *jt-=t0; ++jt;
@@ -3831,10 +3927,12 @@ namespace giac {
 	    *jt-=t3; ++jt;
 	    *jt-=t4; ++jt;
 	    *jt-=t5; ++jt;
+	    *jt-=t6; ++jt;
+	    *jt-=t7; ++jt;
 	  }
 	}
       }
-      itend +=6;
+      itend +=8;
       for (;it<itend;++it){
 	longlong t=0;
 	const int * i=&Aa[i0+delta], *iend=i+(i1-i0), *j=&(*it)[i0];
@@ -5160,7 +5258,7 @@ namespace giac {
     a=pseudo_mod(a+((longlong)b)*c,p,invp,nbits);
   }
 
-#ifdef HAVE_VCL1_VECTORCLASS_H 
+#if defined CPU_SIMD
   inline Vec4q pseudo_mod4(const Vec4q & x,const Vec4q& p4,const Vec4q & invp4,int nbits){
     return x - _mm256_mul_epi32(_mm256_mul_epi32((x>>nbits),invp4)>>(nbits),p4);
     // return x - (((x>>nbits)*invp)>>(nbits))*p;
@@ -5209,11 +5307,12 @@ namespace giac {
 	){
       int nbits=sizeinbase2(p); 
       unsigned invp=((1ULL<<(2*nbits)))/p+1;
-#ifdef HAVE_VCL1_VECTORCLASS_H
+#ifdef CPU_SIMD
       Vec4q p4(p),invp4(invp);
 #endif
       for (;it1<=it1_;){
-#if 0 // def HAVE_VCL1_VECTORCLASS_H
+#if 0 //def CPU_SIMD
+#if 1
 	Vec4i I1,I2,I3,I4,T;
 	I1.load(it1); I2.load(it2); I3.load(it3); I4.load(it4); T.load(jt);
 	Vec4q I1_,I2_,I3_,I4_,T_;
@@ -5225,6 +5324,24 @@ namespace giac {
 	I1=compress(I1_); I2=compress(I2_); I3=compress(I3_); I4=compress(I4_);
 	I1.store(it1); I2.store(it2); I3.store(it3); I4.store(it4);
 	jt+=4;it4+=4;it3+=4;it2+=4;it1+=4;
+#else
+	Vec4i I1,T;
+	Vec4q I1_,T_;
+	T.load(jt); T_=extend(T);
+	I1.load(it1); I1_=extend(I1); 
+	pseudo_mod4(I1_,c1,T_,p4,invp4,nbits);
+	I1=compress(I1_); I1.store(it1); 
+	I1.load(it2); I1_=extend(I1); 
+	pseudo_mod4(I1_,c2,T_,p4,invp4,nbits);
+	I1=compress(I1_); I1.store(it2); 
+	I1.load(it3); I1_=extend(I1); 
+	pseudo_mod4(I1_,c3,T_,p4,invp4,nbits);
+	I1=compress(I1_); I1.store(it3); 
+	I1.load(it4); I1_=extend(I1);
+	pseudo_mod4(I1_,c4,T_,p4,invp4,nbits);
+	I1=compress(I1_); I1.store(it4);
+	jt+=4;it4+=4;it3+=4;it2+=4;it1+=4;
+#endif
 #else
 	int tmp=*jt;
 	pseudo_mod(*it1,c1,tmp,p,invp,nbits);
@@ -8010,7 +8127,7 @@ namespace giac {
     longlong modulo2=longlong(modulo)*modulo;
     bool convertpos= double(modulo2)*ps >= 9.22e18;
     if (convertpos)
-      makepositive(N,lstart,lmax,c,cmax,modulo);
+      makepositive(N,l,lmax,c,cmax,modulo);
     vector<longlong> buffer(cmax);
     for (int L=l;L<lmax;++L){
       if (debuginfo){
@@ -8046,9 +8163,20 @@ namespace giac {
 	if (convertpos){
 	  int C=col+1;
 	  longlong * buf=&buffer[C];
-	  longlong * bufend=&buffer[cmax]-8;
+	  longlong * bufend=&buffer[0]+cmax-8;
 	  const int * nline=&Nline[C];
 	  for (;buf<=bufend;buf+=8,nline+=8){
+#ifdef CPU_SIMD
+	    Vec4q x,n; Vec4i nn;
+	    x.load(buf); nn.load(nline); n=extend(nn);
+	    x -= coeff*n;
+	    x += ((x>>63) & modulo2);
+	    x.store(buf);
+	    x.load(buf+4); nn.load(nline+4); n=extend(nn);
+	    x -= coeff*n;
+	    x += ((x>>63) & modulo2);
+	    x.store(buf+4);
+#else
 	    longlong x,y;
 	    x=buf[0]; x -= coeff*nline[0]; x -= (x>>63)*modulo2; buf[0]=x; 
 	    y=buf[1]; y -= coeff*nline[1]; y -= (y>>63)*modulo2; buf[1]=y; 
@@ -8057,7 +8185,8 @@ namespace giac {
 	    x=buf[4]; x -= coeff*nline[4]; x -= (x>>63)*modulo2; buf[4]=x; 
 	    y=buf[5]; y -= coeff*nline[5]; y -= (y>>63)*modulo2; buf[5]=y; 
 	    x=buf[6]; x -= coeff*nline[6]; x -= (x>>63)*modulo2; buf[6]=x; 
-	    y=buf[7]; y -= coeff*nline[7]; y -= (y>>63)*modulo2; buf[7]=y; 
+	    y=buf[7]; y -= coeff*nline[7]; y -= (y>>63)*modulo2; buf[7]=y;
+#endif
 	  }
 	  for (C+=int(buf-&buffer[C]);C<cmax;++C){
 	    longlong & b=buffer[C] ;
@@ -8070,7 +8199,7 @@ namespace giac {
 	else {
 	  int C=col+1;
 	  longlong * buf=&buffer[C];
-	  longlong * bufend=&buffer[cmax]-8;
+	  longlong * bufend=&buffer[0]+cmax-8;
 	  const int * nline=&Nline[C];
 	  for (;buf<=bufend;buf+=8,nline+=8){
 	    buf[0] -= coeff*nline[0];
@@ -8275,6 +8404,9 @@ namespace giac {
     // desalloc null lines
     free_null_lines(N,l,lmax,c,cmax);
     longlong modulo2=longlong(modulo)*modulo;
+#ifdef CPU_SIMD
+    Vec4q P(modulo2);
+#endif
     bool convertpos= double(modulo2)*(lmax-l) >= 9.22e18;
     if (convertpos){
       makepositive(N,l,lmax,c,cmax,modulo);
@@ -8316,9 +8448,17 @@ namespace giac {
 	    }
 #else
 	    int C=col+1;
-	    longlong * ptr= &buffer[C],*ptrend=&buffer[cmax]-4;
+	    longlong * ptr= &buffer[C],*ptrend=&buffer[0]+cmax-4;
 	    const int *ptrN=&Nline[C];
 	    for (;ptr<ptrend;ptrN+=4,ptr+=4){
+#ifdef CPU_SIMD
+	      Vec4q x; x.load(ptr);
+	      Vec4i n; n.load(ptrN);
+	      Vec4q N; N=extend(n);
+	      x -= coeff*N;
+	      x += ((x>>63)&P);
+	      x.store(ptr);
+#else
 	      longlong x = *ptr;
 	      x -= coeff*(*ptrN);   
 	      x += (x>>63)&modulo2;
@@ -8335,6 +8475,7 @@ namespace giac {
 	      x -= coeff*(ptrN[3]);   
 	      x += (x>>63)&modulo2;
 	      ptr[3] = x;
+#endif
 	    }
 	    C += ptr-&buffer[C];
 	    for (;C<cmax;++C){
@@ -8348,7 +8489,7 @@ namespace giac {
 	  }
 	  else {
 	    int C=col+1;
-	    longlong * ptr= &buffer[C],*ptrend=&buffer[cmax]-4;
+	    longlong * ptr= &buffer[C],*ptrend=&buffer[0]+cmax-4;
 	    const int *ptrN=&Nline[C];
 	    for (;ptr<ptrend;ptrN+=4,ptr+=4){
 	      *ptr -= coeff*(*ptrN);
@@ -8664,7 +8805,8 @@ namespace giac {
     
   void * do_thread_lower_reduction(void * ptr_){
     thread_modular_reduction_t * ptr=(thread_modular_reduction_t *) ptr_;
-    smallmodrref_lower(*ptr->Nptr,ptr->linit,ptr->l,ptr->lmax,ptr->c,ptr->effcmax,*ptr->pivotcols,ptr->modulo,ptr->debuginfo);
+    if (ptr->l<ptr->lmax)
+	smallmodrref_lower(*ptr->Nptr,ptr->linit,ptr->l,ptr->lmax,ptr->c,ptr->effcmax,*ptr->pivotcols,ptr->modulo,ptr->debuginfo);
     return ptr;
   }
 
@@ -8848,18 +8990,17 @@ namespace giac {
     }
     int ilmax=lmax;
     if (allow_block){
-      for (int i=0;i<lmax-1;){
-      if (N[lmax-1].empty()){
-      --lmax;
-      continue;
+      // move empty lines at end
+      for (int i=0;i<lmax-1;++i){
+        if (N[i].empty()){
+          // beware this will modify permutation wrt normal Gaussian elimination
+          for (int j=i;j<lmax-1;++j){
+            swap(N[j],N[j+1]);
+            swap(permutation[j],permutation[j+1]);
+            idet=-idet;
+          }
+        }
       }
-      if (N[i].empty()){
-	swap(N[i],N[lmax-1]);
-	swap(permutation[i],permutation[lmax-1]);
-	--lmax;
-      }
-      ++i;
-    }
     }
     if (debug_infolevel>2)
       CERR << CLOCK()*1e-6 << " Effective number of rows " << lmax << "/" << ilmax << '\n';
@@ -8887,6 +9028,7 @@ namespace giac {
 	if (debug_infolevel>2)
 	  CERR << CLOCK()*1e-6 << " rref_lower begin " << effl << ".." << lmax << "/" << c << ".." << cmax << '\n';
 	// CERR << pivotcols << '\n';
+	makepositive(N,l,effl,c,cmax,modulo);
 #ifdef HAVE_LIBPTHREAD
 	if (nthreads>1 && double(lmax-effl)*(cmax-c)>1e5){
 	  pthread_t tab[64];
@@ -8900,7 +9042,7 @@ namespace giac {
 	  for (int j=0;j<nthreads;++j){
 	    redparam[j].l=k;
 	    k += kstep;
-	    if (k>lmax)
+	    if (k>lmax || j==nthreads-1)
 	      k=lmax;
 	    redparam[j].lmax=k;
 	    bool res=true;
@@ -8924,6 +9066,8 @@ namespace giac {
 	// reduce second half
 	//cerr << N <<'\n';
 	smallmodrref(nthreads,N,pivots,permutation,maxrankcols,idet,l+halfl,lmax,c+(idet && rref_or_det_or_lu==1?halfl:0),cmax,0/*fullreduction*/,0,modulo,0,false,workptr,true,carac);
+	// call again on the whole almost reduced matrix without block and with threads:=1
+	smallmodrref(1,N,pivots,permutation,maxrankcols,idet,l,lmax,c+(idet && rref_or_det_or_lu==1?halfl:0),cmax,0/*fullreduction*/,0,modulo,0,false,workptr,false,carac);
 	if (debug_infolevel>2)
 	  CERR << CLOCK()*1e-6 << " rref end " << lmax-l << "x" << cmax-c << '\n';
 	//cerr << N <<'\n';
