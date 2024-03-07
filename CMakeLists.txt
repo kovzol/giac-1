@@ -103,8 +103,16 @@ if(WIN32)
     endif()
 endif()
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "-fpermissive -std=c++17")
+
+if(VCL2)
+    add_definitions(-DHAVE_VCL2_VECTORCLASS_H -march=native) # vectorclass support
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_FLAGS "-fpermissive -std=c++17")
+else
+    set(CMAKE_CXX_STANDARD 11)
+    set(CMAKE_CXX_FLAGS "-fpermissive -std=c++0x")
+endif(VCL2)
+
 
 set(GIAC_SOURCES
         src/giac/cpp/alg_ext.cc
