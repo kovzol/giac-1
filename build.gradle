@@ -230,8 +230,11 @@ def giacSpecificSettings(cppCompiler, linker, targetPlatform) {
         if (targetPlatform.architecture.name == 'arm-v7') {
             cppCompiler.define 'HAVE_GETTEXT'
             linker.args '-lstdc++'
+        } else {
+            cppCompiler.define 'HAVE_VCL2_VECTORCLASS_H'
+            cppCompiler.args '-march=native'
+            cppCompiler.args '-std=c++17'
         }
-
 
         cppCompiler.define 'HAVE_UNISTD_H'
 
