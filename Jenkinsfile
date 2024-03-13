@@ -42,8 +42,8 @@ pipeline {
             MAVEN = credentials('maven-repo')
             ANDROID_SDK_ROOT='/var/lib/jenkins/.android-sdk'
             BINARYEN="${env.WORKSPACE}/emsdk/upstream"
-            EMSDK_PYTHON='/usr/bin/python3.8'
-            PATH="$crosscompilers/x86/bin:$crosscompilers/x86_64/bin:$crosscompilers/arm/bin:$crosscompilers/arm64/bin:$PATH"
+            EMSDK_PYTHON='/usr/bin/python3.10'
+            PATH="$crosscompilers/x86/bin:$crosscompilers/x86_64/bin:$crosscompilers/arm/bin:$crosscompilers/arm64/bin:/var/lib/jenkins/glibc/build/elf:$PATH"
           }
           steps {
             unstash name: 'giac-clang'
