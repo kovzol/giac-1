@@ -105,12 +105,12 @@ endif()
 
 
 if(VCL2)
-    add_definitions(-DHAVE_VCL2_VECTORCLASS_H -march=native) # vectorclass support
+    add_definitions(-DHAVE_VCL2_VECTORCLASS_H) # vectorclass support
     set(CMAKE_CXX_STANDARD 17)
-    set(CMAKE_CXX_FLAGS "-fpermissive -std=c++17")
+    set(CMAKE_CXX_FLAGS "-fpermissive -std=c++17 -march=native -O2")
 else()
     set(CMAKE_CXX_STANDARD 11)
-    set(CMAKE_CXX_FLAGS "-fpermissive -std=c++0x")
+    set(CMAKE_CXX_FLAGS "-fpermissive -std=c++0x -O2")
 endif(VCL2)
 
 
