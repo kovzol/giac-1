@@ -59,7 +59,7 @@ int shell_x=0,shell_y=0,shell_fontw=12,shell_fonth=18;
 
 #ifdef NUMWORKS
 #if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
-extern "C" void sync_screen(){}
+extern "C" void sync_screen();//{}
 #endif
 
 char * freeptr=0;
@@ -99,8 +99,18 @@ const int xwaspy_shift=33; // must be between 32 and 63, reflect in xcas.js and 
 #else
   void py_ck_ctrl_c(){}
 #endif
+
 //giac::context * contextptr=0;
+#if defined NUMWORKS_SLOTBFR || defined NUMWORKS_SLOTBEN
+#ifdef NUMWORKS_SLOTBFR
+const int lang=1;
+#else
+const int lang=0;
+#endif
+#else
 int lang=1;
+#endif
+
 #ifndef BW
 int clip_ymin=0;
 #endif
@@ -138,7 +148,6 @@ int python_init(int stack_size,int heap_size){
 }
 
 int micropy_ck_eval(const char *line){
-#if 1 // def NUMWORKS
   giac::ctrl_c=giac::interrupted=false;
   giac::freeze=false;
   if (python_heap && line[0]==0)
@@ -150,8 +159,10 @@ int micropy_ck_eval(const char *line){
     console_output("Memory full",11);
     return RAND_MAX;
   }
-#endif
-  return micropy_eval(line);
+  enable_back_interrupt();
+  int res=micropy_eval(line);
+  disable_back_interrupt();
+  return res;
   // if MP_PARSE_SINGLE_INPUT is used, split input if newline not followed by a space, return shift
   int shift=0,nl=0;
   const char * ptr=line;
@@ -931,7 +942,9 @@ namespace giac {
 #define CAT_CATEGORY_LOGO 23 // should be the last one
 #define XCAS_ONLY 0x80000000
   void init_locale(){
+#if !defined NUMWORKS_SLOTBFR && !defined NUMWORKS_SLOTBEN
     lang=1;
+#endif
   }
 
   const catalogFunc completeCatfr[] = { // list of all functions (including some not in any category)
@@ -941,7 +954,7 @@ namespace giac {
     // {"sinh(x)", 0, "Hyperbolic sine of x.", 0, 0, CAT_CATEGORY_TRIG},
     // {"tanh(x)", 0, "Hyperbolic tangent of x.", 0, 0, CAT_CATEGORY_TRIG},
     {" boucle for (pour)", "for ", "Boucle definie pour un indice variant entre 2 valeurs fixees", "#\nfor ", 0, CAT_CATEGORY_PROG},
-    {" boucle liste", "for in", "Boucle sur tous les elements d'une liste.", "#\nfor in", 0, CAT_CATEGORY_PROG},
+    {" boucle liste", "for in", "Boucle sur les elements d'une liste.", "#\nfor in", 0, CAT_CATEGORY_PROG},
     {" boucle while (tantque)", "while ", "Boucle indefinie tantque.", "#\nwhile ", 0, CAT_CATEGORY_PROG},
     {" test si alors", "if ", "Test", "#\nif ", 0, CAT_CATEGORY_PROG},
     {" test sinon", "else ", "Clause fausse du test", 0, 0, CAT_CATEGORY_PROG},
@@ -1002,7 +1015,7 @@ namespace giac {
     {"_alpha_", 0, "constante de structure fine", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_c_", 0, "vitesse de la lumiere", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_cd", 0, "Luminosite en candela", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
-    {"_cdf", "_cdf", "Suffixe pour obtenir une distribution cumulee. Taper F2 pour la distribution cumulee inverse.", "#_icdf", 0, CAT_CATEGORY_PROBA|XCAS_ONLY},
+    {"_cdf", "_cdf", "Suffixe de distribution cumulee. Taper F2 pour la distribution cumulee inverse.", "#_icdf", 0, CAT_CATEGORY_PROBA|XCAS_ONLY},
     {"_d", 0, "Temps: jour", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_deg", 0, "Angle en degres", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_eV", 0, "Energie en electron-Volt", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
@@ -1030,7 +1043,7 @@ namespace giac {
     {"_mpme_", 0, "ratio de masse proton/electron", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_mu0_", 0, "permeabilite du vide", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_phi_", 0, "quantum flux magnetique", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
-    {"_plot", "_plot", "Suffixe pour obtenir le graphe d'une regression.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];polynomial_regression_plot(X,Y,2);scatterplot(X,Y)", 0, CAT_CATEGORY_STATS| XCAS_ONLY},
+    {"_plot", "_plot", "Suffixe pour graphe d'une regression.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];polynomial_regression_plot(X,Y,2);scatterplot(X,Y)", 0, CAT_CATEGORY_STATS| XCAS_ONLY},
     {"_qe_", 0, "charge de l'electron", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_qme_", 0, "_q_/_me_", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_rad", 0, "Angle en radians", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
@@ -1044,7 +1057,7 @@ namespace giac {
     {"a or b", " or ", "Ou logique", 0, 0, CAT_CATEGORY_PROGCMD},
     {"abcuv(a,b,c)", 0, "Cherche 2 polynomes u,v tels que a*u+b*v=c","x+1,x^2-2,x", 0, CAT_CATEGORY_POLYNOMIAL| XCAS_ONLY},
     {"abs(x)", 0, "Valeur absolue, module ou norme de x", "-3", "[1,2,3]", CAT_CATEGORY_COMPLEXNUM | (CAT_CATEGORY_REAL<<8)},
-    {"add(u,v)", 0, "En Python, additionne des listes ou listes de listes u et v comme des vecteurs ou matrices.","[1,2,3],[0,1,3]", "[[1,2]],[[3,4]]", CAT_CATEGORY_LINALG},
+    {"add(u,v)", 0, "En Python, addition de listes ou listes de listes u et v comme des vecteurs ou matrices.","[1,2,3],[0,1,3]", "[[1,2]],[[3,4]]", CAT_CATEGORY_LINALG},
     {"append", 0, "Ajoute un element en fin de liste l","#l.append(x)", 0, CAT_CATEGORY_LIST},
     {"approx(x)", 0, "Valeur approchee de x. Raccourci S-D", "pi", 0, CAT_CATEGORY_REAL| XCAS_ONLY},
     {"aire(objet)", 0, "Aire algebrique", "cercle(0,1)", "triangle(-1,1+i,3)", CAT_CATEGORY_2D  },
@@ -1272,7 +1285,9 @@ namespace giac {
     {"ranv(n,[loi,parametres])", 0, "Vecteur aleatoire", "4,normald,0,1", "10,30", CAT_CATEGORY_LINALG},
     {"ratnormal(x)", 0, "Ecrit sous forme d'une fraction irreductible.", "(x+1)/(x^2-1)^2", 0, CAT_CATEGORY_ALGEBRA | XCAS_ONLY},
     {"re(z)", 0, "Partie reelle (z.re en Python)", "1+i", 0, CAT_CATEGORY_COMPLEXNUM},
+#ifndef NUMWORKS
     {"read(\"filename\")", "read(\"", "Lire un fichier. Voir aussi write", 0, 0, CAT_CATEGORY_PROGCMD | XCAS_ONLY},
+#endif
     {"rectangle_plein a,b", "rectangle_plein ", "Rectangle direct rempli depuis la tortue de cotes a et b (si b est omis, la tortue remplit un carre)", "#rectangle_plein 30", "#rectangle_plein(20,40)", CAT_CATEGORY_LOGO | XCAS_ONLY},
     {"recule n", "recule ", "La tortue recule de n pas, par defaut n=10", "#recule 30", 0, CAT_CATEGORY_LOGO},
     {"red", "red", "Option d'affichage", "#display=red", 0, CAT_CATEGORY_PROGCMD},
@@ -1340,7 +1355,9 @@ namespace giac {
   {"vector(A,B)", 0, "vecteur AB", 0, 0, CAT_CATEGORY_2D | (CAT_CATEGORY_3D << 8)},
   {"volume(P)", 0, "volume d'un polyedre ou d'une sphere", 0, 0, (CAT_CATEGORY_3D )},
 				     //{"version", "version()", "Khicas 1.5.0, (c) B. Parisse et al. www-fourier.ujf-grenoble.fr/~parisse. License GPL version 2. Interface adaptee d'Eigenmath pour Casio, G. Maia, http://gbl08ma.com", 0, 0, CAT_CATEGORY_PROGCMD},
-    {"write(\"filename\",var)", "write(\"", "Sauvegarde une ou plusieurs variables dans un fichier. Par exemple f(x):=x^2; write(\"func_f\",f).",  0, 0, CAT_CATEGORY_PROGCMD | XCAS_ONLY},
+#ifndef NUMWORKS
+  {"write(\"filename\",var)", "write(\"", "Sauvegarde une ou plusieurs variables dans un fichier. Par exemple f(x):=x^2; write(\"func_f\",f).",  0, 0, CAT_CATEGORY_PROGCMD | XCAS_ONLY},
+#endif
     {"yellow", "yellow", "Option d'affichage", "#display=yellow", 0, CAT_CATEGORY_PROGCMD},
     {"|", "|", "Ou logique", "#1|2", 0, CAT_CATEGORY_PROGCMD},
     {"~", "~", "Complement", "#~7", 0, CAT_CATEGORY_PROGCMD},
@@ -1662,7 +1679,9 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
   {"ranv(n,[loi,parametres])", 0, "Random vector.", "10","4,normald,0,1", CAT_CATEGORY_LINALG},
   {"ratnormal(x)", 0, "Puts everything over a common denominator.", 0, 0, CAT_CATEGORY_ALGEBRA},
   {"re(z)", 0, "Real part.", "1+i", 0, CAT_CATEGORY_COMPLEXNUM},
+#ifndef NUMWORKS
   {"read(\"filename\")", "read(\"", "Read a file.", 0, 0, CAT_CATEGORY_PROGCMD},
+#endif
   {"rectangle_plein a,b", "rectangle_plein ", "Direct filled rectangle from turtle position, if b is omitted b==a", "#rectangle_plein 30","#rectangle_plein 20,40", CAT_CATEGORY_LOGO},
   {"recule n", "recule ", "Turtle backward n steps, n=10 by default", "#recule 30", 0, CAT_CATEGORY_LOGO},
   {"red", "red", "Display option", "#display=red", 0, CAT_CATEGORY_PROGCMD},
@@ -1719,7 +1738,9 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
   {"uniformd(a,b,x)", "uniformd", "uniform law on [a,b] of density 1/(b-a)", 0, 0, CAT_CATEGORY_PROBA},
   {"vertices(objet)", 0, "List of vertices of a polygon or polyhedra", "triangle(1,i,2)", "cube([0,0,0],[1,0,0],[0,1,0])", CAT_CATEGORY_2D | (CAT_CATEGORY_3D << 8) },
   //{"version", "version()", "Khicas 1.5.0, (c) B. Parisse et al. www-fourier.ujf-grenoble.fr/~parisse\nLicense GPL version 2. Interface adapted from Eigenmath for Casio, G. Maia, http://gbl08ma.com. Do not use if CAS calculators are forbidden.", 0, 0, CAT_CATEGORY_PROGCMD},
+#ifndef NUMWORKS
   {"write(\"filename\",var)", "write(\"", "Save 1 or more variables in a file. For example f(x):=x^2; write(\"func_f\",f).",  0, 0, CAT_CATEGORY_PROGCMD},
+#endif
   {"yellow", "yellow", "Display option", "#display=yellow", 0, CAT_CATEGORY_PROGCMD},
   {"|", "|", "Logical or", "#1|2", 0, CAT_CATEGORY_PROGCMD},
   {"~", "~", "Complement", "#~7", 0, CAT_CATEGORY_PROGCMD},
@@ -1727,16 +1748,16 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 
   const char aide_khicas_string[]="Aide Khicas";
 #ifdef NUMWORKS
-  const char shortcuts_fr_string[]="Raccourcis clavier (shell et editeur)\nshift-/: %\nalpha shift \": '\nshift--: \\\nshift-ans: completion\nshift-*: factor\nshift-+: normal\nshift-1 a 6: selon bandeau en bas\nshift-7: matrices\nshift-8: complexes\nshift-9:arithmetique entiere\nshift-0: probas\nshift-.: reels\nshift-10^: polynomes\nvar: liste des variables\nans: figure tortue (editeur)\n\nshift-x^y (sto) renvoie =>\n=>+: partfrac\n=>*: factor\n=>sin/cos/tan\n=>=>: solve\n\nShell:\nshift-5: Editeur 2d ou graphique ou texte selon objet\nshift-6: editeur texte\n+ ou - modifie un parametre en surbrillance\n\nEditeur d'expressions\nshift-cut: defaire/refaire (1 fois)\npave directionnel: deplace la selection dans l'arborescence de l'expression\nshift-droit/gauche echange selection avec argument a droite ou a gauche\nalpha-droit/gauche dans une somme ou un produit: augmente la selection avec argument droit ou gauche\nshift-4: Editer selection, shift-5: taille police + ou - grande\nEXE: evaluer la selection\nshift-6: valeur approchee\nBackspace: supprime l'operateur racine de la selection\n\nEditeur de scripts\nEXE: passage a la ligne\nshift-CUT: documentation\nshift COPY (ou shift et deplacement curseur simultanement): marque le debut de la selection, deplacer le curseur vers la fin puis Backspace pour effacer ou shift-COPY pour copier sans effacer. shift-PASTE pour coller.\nHome-6 recherche seule: entrer un mot puis EXE puis EXE. Taper EXE pour l'occurence suivante, Back pour annuler.\nHome-6 remplacer: entrer un mot puis EXE puis le remplacement et EXE. Taper EXE ou Back pour remplacer ou non et passer a l'occurence suivante, AC pour annuler\nOK: tester syntaxe\n\nRaccourcis Graphes:\n+ - zoom\n(-): zoomout selon y\n*: autoscale\n/: orthonormalisation\nOPTN: axes on/off";
-  const char shortcuts_en_string[]="Keyboard shortcuts (shell and editor)\nshift-/: %\nalpha shift \": '\nshift--: \\\nshift ans: completion\nshift-*: factor\nshift-+: normal\nshift-1 to 6: cf. screen bottom\nshift-7: matrices\nshift-8: complexes\nshift-9:arithmetic\nshift-0: proba\nshift-.: reals\nshift-10^: polynomials\nvar: variables list\nans: turtle screen (editor)\n\nshift-x^y (sto) returns =>\n=>+: partfrac\n=>*: factor\n=>sin/cos/tan\n=>=>: solve\n\nShell:\nshift-5: 2d editor or graph or text\nshift-6: text edit\n+ ou - modifies selected slider\n\nExpressions editor\nshift-cut: undo/redo (1 fois)\nkeypad: move selection inside expression tree\nshift-right/left exchange selection with right or left argument\nalpha-right/left: inside a sum or product: increase selection with right or left argument\nshift-4: Edit selection, shift-5: change fontsize\nEXE: eval selection\nshift-6: approx value\nBackspace: suppress selection's rootnode operator\n\nScript Editor\nEXE: newline\nshift-CUT: documentation\nshift-COPY: marks selection begin, move the cursor to the end, then hit Backspace to erase or shift-COPY to copy (no erase). shift-PASTE to paste.\nHome-6 search: enter a word then EXE then again EXE. Type EXE for next occurence, Back to cancel.\nHome-6 replace: enter a word then EXE then replacement word then EXE. Type EXE or Back to replace or ignore and go to next occurence, AC to cancel\nOK: test syntax\n\nGraph shortcuts:\n+ - zoom\n(-): zoomout along y\n*: autoscale\n/: orthonormalization\nOPTN: axes on/off";
+  const char shortcuts_fr_string[]="Raccourcis clavier (shell et editeur)\nshift-/: %\nalpha shift \": '\nshift--: \\\nshift-+: completion\nshift-1 a 6: selon bandeau en bas\nshift-7: matrices\nshift-8: complexes\nshift-9:arithmetique entiere\nshift-0: probas\nshift-.: reels\nshift-10^: polynomes\nvar: liste des variables\nans: figure tortue (editeur)\n\nshift-x^y (sto) renvoie =>\n=>+: partfrac\n=>*: factor\n=>sin/cos/tan\n=>=>: solve\n\nShell:\nshift-5: Editeur 2d ou graphique ou texte selon objet\nshift-6: editeur texte\n+ ou - modifie un parametre en surbrillance\n\nEditeur d'expressions\nshift-cut: defaire/refaire (1 fois)\npave directionnel: deplace la selection dans l'arborescence de l'expression\nshift-droit/gauche echange selection avec argument a droite ou a gauche\nalpha-droit/gauche dans une somme ou un produit: augmente la selection avec argument droit ou gauche\nshift-4: Editer selection, shift-5: taille police + ou - grande\nEXE: evaluer la selection\nshift-6: valeur approchee\nBackspace: supprime l'operateur racine de la selection\n\nEditeur de scripts\nEXE: passage a la ligne\nshift-CUT: documentation\nshift COPY (ou shift et deplacement curseur simultanement): marque le debut de la selection, deplacer le curseur vers la fin puis Backspace pour effacer ou shift-COPY pour copier sans effacer. shift-PASTE pour coller.\nHome-6 recherche seule: entrer un mot puis EXE puis EXE. Taper EXE pour l'occurence suivante, Back pour annuler.\nHome-6 remplacer: entrer un mot puis EXE puis le remplacement et EXE. Taper EXE ou Back pour remplacer ou non et passer a l'occurence suivante, AC pour annuler\nOK: tester syntaxe\n\nRaccourcis Graphes:\n+ - zoom\n(-): zoomout selon y\n*: autoscale\n/: orthonormalisation\nOPTN: axes on/off";
+  const char shortcuts_en_string[]="Keyboard shortcuts (shell and editor)\nshift-/: %\nalpha shift \": '\nshift--: \\\nshift-+: completion\nshift-1 to 6: cf. screen bottom\nshift-7: matrices\nshift-8: complexes\nshift-9:arithmetic\nshift-0: proba\nshift-.: reals\nshift-10^: polynomials\nvar: variables list\nans: turtle screen (editor)\n\nshift-x^y (sto) returns =>\n=>+: partfrac\n=>*: factor\n=>sin/cos/tan\n=>=>: solve\n\nShell:\nshift-5: 2d editor or graph or text\nshift-6: text edit\n+ ou - modifies selected slider\n\nExpressions editor\nshift-cut: undo/redo (1 fois)\nkeypad: move selection inside expression tree\nshift-right/left exchange selection with right or left argument\nalpha-right/left: inside a sum or product: increase selection with right or left argument\nshift-4: Edit selection, shift-5: change fontsize\nEXE: eval selection\nshift-6: approx value\nBackspace: suppress selection's rootnode operator\n\nScript Editor\nEXE: newline\nshift-CUT: documentation\nshift-COPY: marks selection begin, move the cursor to the end, then hit Backspace to erase or shift-COPY to copy (no erase). shift-PASTE to paste.\nHome-6 search: enter a word then EXE then again EXE. Type EXE for next occurence, Back to cancel.\nHome-6 replace: enter a word then EXE then replacement word then EXE. Type EXE or Back to replace or ignore and go to next occurence, AC to cancel\nOK: test syntax\n\nGraph shortcuts:\n+ - zoom\n(-): zoomout along y\n*: autoscale\n/: orthonormalization\nOPTN: axes on/off";
 #else
   const char shortcuts_fr_string[]="Raccourcis clavier (shell et editeur)\nlivre: aide/complete\ntab: complete (shell)/indente (editeur)\nshift-/: %\nshift *: '\nctrl-/: \\\nshift-1 a 6: selon bandeau en bas\nshift-7: matrices\nshift-8: complexes\nshift-9:arithmetique\nshift-0: probas\nshift-.: reels\nctrl P: programme\nvar: liste des variables\nans (shift (-)): figure tortue (editeur)\n\nctrl-var (sto) renvoie =>\n=>+: partfrac\n=>*: factor\n=>sin/cos/tan\n=>=>: solve\n\nShell:\nshift-5: Editeur 2d ou graphique ou texte selon objet\nshift-4: editeur texte\n+ ou - modifie un parametre en surbrillance\n\nEditeur d'expressions\nctrl z: defaire/refaire (1 fois)\npave directionnel: deplace la selection dans l'arborescence de l'expression\nshift-droit/gauche echange selection avec argument a droite ou a gauche\nctrl droit/gauche dans une somme ou un produit: augmente la selection avec argument droit ou gauche\nshift-4: Editer selection, shift-5: taille police + ou - grande\nenter: evaluer la selection\nshift-6: valeur approchee\nDel: supprime l'operateur racine de la selection\n\nEditeur de scripts\nenter: passage a la ligne\nctrl z: defaire/refaire (1 fois)\nctrl c ou shift et touche curseur simultanement: marque le debut de la selection, deplacer le curseur vers la fin puis Del pour effacer ou ctrl c pour copier sans effacer. ctrl v pour coller.\ndoc-6 recherche seule: entrer un mot puis enter puis enter. Taper enter pour l'occurence suivante, esc pour annuler.\ndoc-6 remplacer: entrer un mot puis enter puis le remplacement et enter. Taper enter ou esc pour remplacer ou non et passer a l'occurence suivante, ctrl del pour annuler\nvalidation (a droite de U): tester syntaxe\n\nRaccourcis Graphes:\n+ - zoom\n(-): zoomout selon y\n*: autoscale\n/: orthonormalisation\nOPTN: axes on/off";
   const char shortcuts_en_string[]="Keyboard shortcuts (shell and editor)\nbook: help or completion\ntab: completion (shell), indent (editor)\nshift-/: %\nalpha shift *: '\nctrl-/: \\\nshift-1 a 6: see at bottom\nshift-7: matrices\nshift-8: complexes\nshift-9:arithmetic\nshift-0: probas\nshift-.: reals\nctrl P: program\nvar: variables list\n ans (shift (-)): turtle screen (editor)\n\nctrl var (sto) returns =>\n=>+: partfrac\n=>*: factor\n=>sin/cos/tan\n=>=>: solve\n\nShell:\nshift-5: 2d editor or graph or text\nshift-4: text edit\n+ ou - modifies selected slider\n\nExpressions editor\nctrl z: undo/redo (1 fois)\nkeypad: move selection inside expression tree\nshift-right/left exchange selection with right or left argument\nalpha-right/left: inside a sum or product: increase selection with right or left argument\nshift-4: Edit selection, shift-5: change fontsize\nenter: eval selection\nshift-6: approx value\nDel: suppress selection's rootnode operator\n\nScript Editor\nenter: newline\nctrl z: undo/redo (1 time)\nctrl c or shift + cursor key simultaneously: marks selection begin, move the cursor to the end, then hit Del to erase or ctrl c to copy (no erase). ctrl v to paste.\ndoc-6 search: enter a word then enter then again enter. Type enter for next occurence, esc to cancel.\ndoc-6 replace: enter a word then enter then replacement word then enter. Type enter or esc to replace or ignore and go to next occurence, AC to cancel\nOK: test syntax\n\nGraph shortcuts:\n+ - zoom\n(-): zoomout along y\n*: autoscale\n/: orthonormalization\nOPTN: axes on/off";
 #endif
   
-  const char apropos_fr_string[]="Giac/Xcas 1.6.0, (c) 2020 B. Parisse et R. De Graeve, www-fourier.univ-grenoble-alpes.fr/~parisse.\nKhicas, interface pour calculatrices par B. Parisse, license GPL version 2, adaptee de l'interface d'Eigenmath pour Casio, G. Maia (http://gbl08ma.com), Mike Smith, Nemhardy, LePhenixNoir, ...\nPortage sur Numworks par Damien Nicolet. Remerciements a Jean-Baptiste Boric et Maxime Friess\nPortage sur Nspire grace a Fabian Vogt (firebird-emu, ndless...).\nTable periodique d'apres Maxime Friess\nRemerciements au site tiplanet, en particulier Xavier Andreani, Adrien Bertrand, Lionel Debroux";
+  const char apropos_fr_string[]="KhiCAS (c) 2024 B. Parisse et R. De Graeve, www-fourier.univ-grenoble-alpes.fr/~parisse.\nLicense GPL version 2, adaptation de l'interface d'Eigenmath pour Casio, G. Maia (http://gbl08ma.com), Mike Smith, Nemhardy, LePhenixNoir, ...\nPortage Numworks par Damien Nicolet. Remerciements a Jean-Baptiste Boric, Maxime Friess et Yann Couturier.\nPortage sur Nspire grace a Fabian Vogt (firebird-emu, ndless...).\nTable periodique d'apres Maxime Friess\nRemerciements au site tiplanet, Xavier Andreani, Adrien Bertrand, Lionel Debroux";
 
-  const char apropos_en_string[]="Giac/Xcas 1.6.0, (c) 2020 B. Parisse et R. De Graeve, www-fourier.univ-grenoble-alpes.fr/~parisse.\nKhicas, calculators interface by B. Parisse, GPL license version 2, adapted from Eigenmath for Casio, G. Maia (http://gbl08ma.com), Mike Smith, Nemhardy, LePhenixNoir, ...\nPorted on Numworks by Damien Nicolet. Thanks to Jean-Baptiste Boric and Maxime Friess\nPorted on Nspire thanks to Fabian Vogt (firebird-emu, ndless...)\nPeriodic table by Maxime Friess\nThanks to tiplanet, especially Xavier Andreani, Adrien Bertrand, Lionel Debroux";
+  const char apropos_en_string[]="KhiCAS (c) 2024 B. Parisse et R. De Graeve, www-fourier.univ-grenoble-alpes.fr/~parisse.\nGPL license version 2, interface adapted from Eigenmath for Casio, G. Maia (http://gbl08ma.com), Mike Smith, Nemhardy, LePhenixNoir, ...\nPorted on Numworks by Damien Nicolet. Thanks to Jean-Baptiste Boric, Maxime Friess and Yann Couturier.\nPorted on Nspire thanks to Fabian Vogt (firebird-emu, ndless...)\nPeriodic table by Maxime Friess\nThanks to tiplanet, Xavier Andreani, Adrien Bertrand, Lionel Debroux";
 
   const int CAT_COMPLETE_COUNT_FR=sizeof(completeCatfr)/sizeof(catalogFunc);
   const int CAT_COMPLETE_COUNT_EN=sizeof(completeCaten)/sizeof(catalogFunc);
@@ -1897,7 +1918,7 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
     // search in catalog: dichotomy would be more efficient
     // but leading spaces cmdnames would be missed
     int nfunc=(lang==1)?CAT_COMPLETE_COUNT_FR:CAT_COMPLETE_COUNT_EN;//sizeof(completeCat)/sizeof(catalogFunc);
-#if !defined BW && !defined NUMWORKS_SLOTB && !defined NUMWORKS_SLOTAB && (defined NSPIRE_NEWLIB || defined NUMWORKS) // should match static_help[] in help.cc
+#if !defined BW && !defined NUMWORKS_SLOTB && (defined NSPIRE_NEWLIB || defined NUMWORKS) // should match static_help[] in help.cc
     int iii=nfunc; // no search in completeCat, directly in static_help.h
     //if (xcas_python_eval) iii=0;
 #else
@@ -2664,7 +2685,7 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
     case KEY_CHAR_DIV: 
       return "/";
     case KEY_CHAR_POW:
-      return "^";
+      return py?"**":"^";
     case KEY_CHAR_ROOT:
       return "sqrt(";
     case KEY_CHAR_SQUARE:
@@ -2684,11 +2705,11 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
     case KEY_CTRL_XTT:
       return xthetat?"t":"x";
     case KEY_CHAR_LN:
-      return "ln(";
+      return py?"log(":"ln(";
     case KEY_CHAR_LOG:
       return "log10(";
     case KEY_CHAR_EXPN10:
-      return "10^";
+      return py?"10**":"10^";
     case KEY_CHAR_EXPN:
       return "exp(";
     case KEY_CHAR_SIN:
@@ -2734,7 +2755,15 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
     case KEY_CHAR_ACCOLADES:
       return "{}";
     case KEY_CTRL_INS:
-      return ":=";
+      {
+        int c=giac::chartab();
+        if (c>=32 && c<127){
+          text[0]=c;
+          text[1]=0;
+          return text;
+        }
+      }
+      return ""; // ":=";
     case KEY_CHAR_MAT:{
       const char * ptr=xcas::input_matrix(false,contextptr); if (ptr) return ptr;
       if (showCatalog(text,17,contextptr)) return text;
@@ -2843,8 +2872,10 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
       if (key==KEY_SHUTDOWN)
 	return key;      
       // if (!giac::freeze) set_xcas_status();    
-      if (key==KEY_CTRL_EXE || key==KEY_CTRL_OK || key==KEY_CHAR_CR)
+      if (key==KEY_CTRL_EXE || key==KEY_CTRL_OK || key==KEY_CHAR_CR){
+        reset_kbd();
 	return KEY_CTRL_EXE;
+      }
       if (key>=32 && key<128){
 	if (!numeric || key=='-' || (key>='0' && key<='9')){
 	  s.insert(s.begin()+pos,char(key));
@@ -6466,7 +6497,7 @@ namespace xcas {
 	return true;
       }
 #endif
-#if defined NUMWORKS && defined DEVICE && !defined NUMWORKS_SLOTB && !defined NUMWORKS_SLOTAB
+#if defined NUMWORKS && defined DEVICE // && !defined NUMWORKS_SLOTB && !defined NUMWORKS_SLOTAB
       if (iskeydown(KEY_CTRL_EXIT))
 	return true;
       if (iskeydown(KEY_CTRL_OK)){
@@ -8620,13 +8651,13 @@ namespace xcas {
 	    if (is3d){
 	      find_xyz(i,j,current_depth,x,y,z);
 	      round_xy(x,y); round3(z,window_zmin,window_zmax);
-	      sprintf(s+pos," %.3g,%.3g,%.3g",x,y,z);
+	      sprintf(s+pos," %s,%s,%s",print_DOUBLE_(x,3).c_str(),print_DOUBLE_(y,3).c_str(),print_DOUBLE_(z,3));
 	    }
 	    else {
 	      find_xy(i,j,x,y);
 	      // round to maximum pixel range
 	      round_xy(x,y);
-	      sprintf(s+pos," x=%.3g,y=%.3g",x,y);
+	      sprintf(s+pos," x=%s,y=%s",print_DOUBLE_(x,3).c_str(),print_DOUBLE_(y,3).c_str());
 	    }
 	    pos=strlen(s);
 	  }
@@ -9071,7 +9102,11 @@ namespace xcas {
 #ifdef NSPIRE_NEWLIB
       DefineStatusMessage((char*)"menu: menu, esc: quit", 1, 0, 0);
 #else
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
+      DefineStatusMessage((char*)"shift-1:help |-EXE:menu |back:quit", 1, 0, 0);
+#else
       DefineStatusMessage((char*)"shift-1: help, home: menu, back: quit", 1, 0, 0);
+#endif
 #endif
       DisplayStatusArea();
       if (hp || tracemode)
@@ -9313,11 +9348,15 @@ namespace xcas {
 	logo_turtle prec =(*turtleptr)[0];
 #endif
 	int sp=speed;
+        const int speed_loop=1000;
 	for (int k=1;k<l;++k){
+#ifdef NUMWORKS // speed does not work...
+          sp=0;
+#endif
 	  if (k>=2 && sp){
 	    sync_screen();
 	    for (int i=0;i<speed;++i){
-	      for (int j=0;j<1000;++j){
+	      for (int j=0;j<speed_loop;++j){
 		if (iskeydown(5) || iskeydown(4) || iskeydown(22)){
 		  sp=0;
 		  break;
@@ -10973,7 +11012,11 @@ namespace xcas {
 #ifdef NSPIRE_NEWLIB
       DefineStatusMessage((char*)"shift-1: help, menu: menu, esc: quit", 1, 0, 0);
 #else
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
+      DefineStatusMessage((char*)"shift-1: help|-EXE: menu|back: quit", 1, 0, 0);
+#else
       DefineStatusMessage((char*)"shift-1: help, home: menu, back: quit", 1, 0, 0);
+#endif
 #endif
       DisplayStatusArea();
       int saveprec=gr.precision;
@@ -11479,8 +11522,14 @@ namespace xcas {
           smallmenuitems[21].text = (char*) ((lang==1)?"Effacer traces geometrie":"Clear geometry traces");
           drawRectangle(0,180,LCD_WIDTH_PX,60,_BLACK);
           int sres = doMenu(&smallmenu);
-          if (sres == MENU_RETURN_EXIT)
+          if (sres == MENU_RETURN_EXIT){
+#ifndef SIMU
+            if (iskeydown(KEY_CTRL_EXIT))
+              wait_1ms(100);
+#endif
+            gr.must_redraw=true;
             break;
+          }
           if (sres == MENU_RETURN_SELECTION || sres==KEY_CTRL_EXE) {
             const char * ptr=0;
             string s1; double d;
@@ -11607,8 +11656,6 @@ namespace xcas {
             }
           }
         }
-        gr.draw();
-        gr.must_redraw=false;
         continue;
       }
 
@@ -11689,7 +11736,7 @@ namespace xcas {
             gr.update_rotation();
             gr.draw();
             gr.must_redraw=gr.solid3d;
-#ifndef SIMU
+#if !defined SIMU //&& !defined NUMWORKS_SLOTB && !defined NUMWORKS_SLOTAB
             if (!iskeydown(KEY_CTRL_UP))
               break;
 #else
@@ -11749,7 +11796,7 @@ namespace xcas {
             gr.update_rotation();
             gr.draw();
             gr.must_redraw=gr.solid3d;
-#ifndef SIMU
+#if !defined SIMU //&& !defined NUMWORKS_SLOTB && !defined NUMWORKS_SLOTAB
             if (!iskeydown(KEY_CTRL_DOWN))
               break;
 #else
@@ -11807,7 +11854,7 @@ namespace xcas {
             gr.update_rotation();
             gr.draw();
             gr.must_redraw=gr.solid3d;
-#ifndef SIMU
+#if !defined SIMU //&& !defined NUMWORKS_SLOTB && !defined NUMWORKS_SLOTAB
             if (!iskeydown(KEY_CTRL_LEFT))
               break;
 #else
@@ -11865,7 +11912,7 @@ namespace xcas {
             gr.update_rotation();
             gr.draw();
             gr.must_redraw=gr.solid3d;
-#ifndef SIMU
+#if !defined SIMU //&& !defined NUMWORKS_SLOTB && !defined NUMWORKS_SLOTAB
             if (!iskeydown(KEY_CTRL_RIGHT))
               break;
 #else
@@ -13184,7 +13231,7 @@ namespace xcas {
 #endif
 #endif
 
-#if defined NUMWORKS && defined DEVICE && !defined NUMWORKS_SLOTB
+#if defined NUMWORKS && defined DEVICE && !defined NUMWORKS_SLOTB && !defined NUMWORKS_SLOTAB
   BYTE bootloader_hash[]={116,198,71,80,107,25,110,250,180,171,154,127,1,174,88,153,108,172,2,218,82,101,93,157,148,76,37,33,102,53,12,136,};
   const int bootloader_size=65480;
   // check bootloade code, skipping exam mode buffer sector
@@ -14507,7 +14554,13 @@ void draw_editor_menu(bool textgr,bool textpython){
     if (textgr)
       PrintMiniMini(0,205,"shift-1 pnts|2 lines|3 undo|4 disp|5 +-|6 curves|7 triangle|8 polygon|9 solid",4,giac::_CYAN,giac::_BLACK);
     else
-      PrintMiniMini(0,205,textpython>0?"shift-1 test|2 loop|3 undo|4 misc|5 +-|6 logo|7 lin|8 list|9arit":"shift-1 test|2 loop|3 undo|4 misc|5 +-|6 logo|7 matr|8 cplx",4,44444,giac::_BLACK);
+      PrintMiniMini(0,205,
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
+                    textpython>0?"shift-EXE menu|1 test|2 loop|3 undo|4 misc|5+-":"shift-EXE menu|1 test|2 loop|3 undo|4 misc|5+-",
+#else
+                    textpython>0?"shift-1 test|2 loop|3 undo|4 misc|5 +-|6 logo|7 lin|8 list|9arit":"shift-1 test|2 loop|3 undo|4 misc|5 +-|6 logo|7 matr|8 cplx",
+#endif
+                    4,44444,giac::_BLACK);
     //draw_menu(1);
 #endif
   }
@@ -15849,18 +15902,22 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
 	if (clipline<0){
 	  const char * adds;
     //dbgprintf("key 4 %i %i\n",key,clipline);
+#ifdef SIMU
+          if (key==KEY_CTRL_F16)
+            key=KEY_CTRL_INS;
+#endif
 #if 1
 	  if ( (key>=KEY_CTRL_F1 && key<=KEY_CTRL_F4) || key==KEY_CTRL_F6 ||
 	       (key >= KEY_CTRL_F7 && key <= KEY_CTRL_F16)
 	       ){
 	    string le_menu;
 	    if (text->gr) { // geometry menu
-	      le_menu="F1 points\npoint(\nmidpoint(\ncenter(\nelement(\nsingle_inter(\ninter(\nlegende(\ntrace(\nF2 lines\nsegment(\nline(\nhalf_line(\nvector(\nparallel(\nperpendicular(\ntangent(\nplane(\ncircle(\nF4 disp\ndisplay=\nfilled\nred\nblue\ngreen\ncyan\nmagenta\nyellow\nF6 curves\ncircle(\nellipse(\nhyperbola(\nparabola(\nplot(\nplotparam(\nplotpolar(\nplotode(\nF7 triangle\ntriangle(\nequilateral_triangle(\nmedian(\nperpen_bisector(\nbisector(\nisobarycenter(\nF8 polygon\nsquare(\nrectangle(\nquadrilateral(\nhexagon(\npolygon(\nisopolygon(\nvertices(\nF9 3d\nplane(\ncube(\ntetrahedron(\nsphere(\ncone(\nhalf_cone(\ncylinder(\nplot3d(\nF: transf\nprojection(\nreflection(\ntranslation(\nrotation(\nhomothety(\nsimilarity(\nF; geodiff\ntangent(\nosculating_circle(\nevolute(\ncurvature(\nfrenet(\noctahedron(\ndodecahedron(\nicosahedron(\nF< mesures\ndistance(\ndistance2(\nradius(\naire(\nperimetre(\npente(\nangle(\nF= test\nis_collinear(\nis_concyclic(\nis_coplanar(\nis_cospherical(\nis_element(\nis_parallel(\nis_perpendicular(\nF> analyt\ncoordonnees(\nequation(\nparameq(\nabscisse(\nordonnee(\naffixe(\narg(\n";
+	      le_menu="F1 points\npoint(\nmidpoint(\ncenter(\nelement(\nsingle_inter(\ninter(\nlegende(\ntrace(\nF2 lines\nsegment(\nline(\nhalf_line(\nvector(\nparallel(\nperpendicular(\ntangent(\nplane(\ncircle(\nF4 disp\ndisplay=\nfilled\nred\nblue\ngreen\ncyan\nmagenta\nyellow\nF6 curves\ncircle(\nellipse(\nhyperbola(\nparabola(\nplot(\nplotparam(\nplotpolar(\nplotode(\nF7 triangle\ntriangle(\nequilateral_triangle(\nmedian(\nperpen_bisector(\nbisector(\nisobarycenter(\nincircle(\ncircumcircle(\nF8 polygon\nsquare(\nrectangle(\nquadrilateral(\nhexagon(\npolygon(\nisopolygon(\nvertices(\nF9 3d\nplane(\ncube(\ntetrahedron(\nsphere(\ncone(\nhalf_cone(\ncylinder(\nplot3d(\nF: transf\nprojection(\nreflection(\ntranslation(\nrotation(\nhomothety(\nsimilarity(\nF; geodiff\ntangent(\nosculating_circle(\nevolute(\ncurvature(\nfrenet(\noctahedron(\ndodecahedron(\nicosahedron(\nF< mesures\ndistance(\ndistance2(\nradius(\naire(\nperimetre(\npente(\nangle(\nF= test\nis_collinear(\nis_concyclic(\nis_coplanar(\nis_cospherical(\nis_element(\nis_parallel(\nis_perpendicular(\nF> analyt\ncoordonnees(\nequation(\nparameq(\nabscisse(\nordonnee(\naffixe(\narg(\n";
 	    } else {
 	      if (xcas_python_eval==1)//text->python?
-		le_menu="F1 test\nif \nelse \n<\n>\n==\n!=\n&&\n||\nF2 loop\nfor \nfor in\nrange(\nwhile \nbreak\ndef\nreturn \n#\nF4 misc\n:\n;\n_\n!\n%\nfrom  import *\nprint(\ninput(\nF6 tortue\nforward(\nbackward(\nleft(\nright(\npencolor(\ncircle(\nreset()\nfrom turtle import *\nF: plot\nplot(\ntext(\narrow(\nlinear_regression_plot(\nscatter(\naxis(\nbar(\nfrom matplotl import *\nF7 linalg\nadd(\nsub(\nmul(\ninv(\ndet(\nrref(\ntranspose(\nfrom linalg import *\nF< color\nred\nblue\ngreen\ncyan\nyellow\nmagenta\nblack\nwhite\nF; draw\nset_pixel(\ndraw_line(\ndraw_rectangle(\nfill_rect(\ndraw_polygon(\ndraw_circle(\ndraw_string(\nfrom graphic import *\nF8 numpy\narray(\nreshape(\narange(\nlinspace(\nsolve(\neig(\ninv(\nfrom numpy import *\nF9 arit\npow(\nisprime(\nnextprime(\nifactor(\ngcd(\nlcm(\niegcd(\nfrom arit import *\n";
+		le_menu="F1 test\nif \nelse \n<\n>\n==\n!=\n&&\n||\nF2 loop\nfor \nfor in\nrange(\nwhile \nbreak\ndef\nreturn \n#\nF4 misc\nchartab\n:\n;\n_\n%\nfrom  import *\nprint(\ninput(\nF6 tortue\nforward(\nbackward(\nleft(\nright(\npencolor(\ncircle(\nreset()\nfrom turtle import *\nF: plot\nplot(\ntext(\narrow(\nlinear_regression_plot(\nscatter(\naxis(\nbar(\nfrom matplotl import *\nF7 linalg\nadd(\nsub(\nmul(\ninv(\ndet(\nrref(\ntranspose(\nfrom linalg import *\nF< color\nred\nblue\ngreen\ncyan\nyellow\nmagenta\nblack\nwhite\nF; draw\nset_pixel(\ndraw_line(\ndraw_rectangle(\nfill_rect(\ndraw_polygon(\ndraw_circle(\ndraw_string(\nfrom graphic import *\nF8 numpy\narray(\nreshape(\narange(\nlinspace(\nsolve(\neig(\ninv(\nfrom numpy import *\nF9 arit\npow(\nisprime(\nnextprime(\nifactor(\ngcd(\nlcm(\niegcd(\nfrom arit import *\n";
 	      if (xcas_python_eval<=0)
-		le_menu="F1 test\nif \nelse \n<\n>\n==\n!=\nand\nor\nF2 loop\nfor \nfor in\nrange(\nwhile \nbreak\nf(x):=\nreturn \nvar\nF4 misc\n;\n:\n_\n!\n%\n&\nprint(\ninput(\nF6 tortue\navance\nrecule\ntourne_gauche\ntourne_droite\nrond\ndisque\nrepete\nefface\nF7 lin\nmatrix(\ndet(\nmatpow(\nranm(\nrref(\ntran(\negvl(\negv(\nF9 arit\n mod \nirem(\nifactor(\ngcd(\nisprime(\nnextprime(\npowmod(\niegcd(\nF< plot\nplot(\nplotseq(\nplotlist(\nplotparam(\nplotpolar(\nplotfield(\nhistogram(\nbarplot(\nF: misc\n<\n>\n_\n!\n % \nrand(\nbinomial(\nnormald(\nF8 cplx\nabs(\narg(\nre(\nim(\nconj(\ncsolve(\ncfactor(\ncpartfrac(\n";
+		le_menu="F1 test\nif \nelse \n<\n>\n==\n!=\nand\nor\nF2 loop\nfor \nfor in\nrange(\nwhile \nbreak\nf(x):=\nreturn \nvar\nF4 misc\nchartab\n;\n:\n_\n!\n&\nprint(\ninput(\nF6 tortue\navance\nrecule\ntourne_gauche\ntourne_droite\nrond\ndisque\nrepete\nefface\nF7 lin\nmatrix(\ndet(\nmatpow(\nranm(\nrref(\ntran(\negvl(\negv(\nF9 arit\n mod \nirem(\nifactor(\ngcd(\nisprime(\nnextprime(\npowmod(\niegcd(\nF< plot\nplot(\nplotseq(\nplotlist(\nplotparam(\nplotpolar(\nplotfield(\nhistogram(\nbarplot(\nF: misc\n<\n>\n_\n!\n % \nrand(\nbinomial(\nnormald(\nF8 cplx\nabs(\narg(\nre(\nim(\nconj(\ncsolve(\ncfactor(\ncpartfrac(\n";
 	      if (xcas_python_eval>=0)
 		le_menu += "F= list\nmakelist(\nrange(\nseq(\nlen(\nappend(\nranv(\nsort(\napply(\nF; real\nexact(\napprox(\nfloor(\nceil(\nround(\nsign(\nmax(\nmin(\nF> prog\n;\n:\n\\\n&\n?\n!\ndebug(\npython(\nF? geo\npoint(\nline(\nsegment(\ncircle(\ntriangle(\nplane(\nsphere(\nsingle_inter(\nF@ color\ncolor=\nred\ncyan\ngreen\nblue\nmagenta\nyellow\nlegend(";
 	    } // else not geometry
@@ -15869,6 +15926,15 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
 	      show_status(text,search,replace);
 	      continue;
 	    }
+            if (strcmp(ptr,"chartab")==0){
+              int c=giac::chartab();
+              if (c>=32 && c<127){
+                char tab[2]={0};
+                tab[0]=c;
+                insert(text,tab,true);
+              }
+              continue;
+            }
 	    adds=ptr;
 	  }
 	  else
@@ -16867,7 +16933,11 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
 	  continue;
 	}
 	if (smallmenu.selection>=5 && smallmenu.selection<=9){
+#if defined NUMWORKS_SLOTBFR || defined NUMWORKS_SLOTBEN
+          do_confirm("Short version only available in French");
+#else
 	  lang=smallmenu.selection-4;
+#endif
 	  giac::language(lang,contextptr);
 	  break;
 	}
@@ -16938,7 +17008,7 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
 	  }
 #endif // NSPIRE_NEWLIB
 #ifdef NUMWORKS
-#ifdef DEVICE
+#if defined DEVICE && !defined NUMWORKS_SLOTAB && !defined NUMWORKS_SLOTB
 	  const char * tab[]={lang==1?"Sauvegarde multi-firmwares":"Backup for multi-firmware",lang==1?"Restauration multifirmwares":"Restore multi-firmware backup",lang==1?"Lancer le mode examen":"Run exam mode",lang==1?"Backup du mode examen":"Restore exam mode backup",0};
 	  int choix=select_item(tab,"Mode examen",true);
 	  if (choix<0 || choix>4)
@@ -16975,10 +17045,10 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
 	    confirm(restore_backup(0)?"Success!":"Failure!","OK?");
 	    break;
 	  }
-#endif
+#endif // DEVICE
 	  // if (do_confirm(lang==1?"Le mode examen se lance depuis Parametres":"Enter Exam mode from Settings")) shutdown_state=1;
 	  break;
-#else
+#else // NUMWORKS
 	  if (!exam_mode && confirm((lang==1?"Verifiez que le calcul formel est autorise.":"Please check that the CAS is allowed."),(lang==1?"France: autorise au bac. Enter: ok, esc: annul":"enter: yes, esc: no"))!=KEY_CTRL_F1)
 	    break;
 #endif
@@ -17437,11 +17507,16 @@ static void do_QRdisp(const uint8_t qrcode[]) {
   int border = 0;
   int sb=size+border;
   int scale=177/sb;
+#ifdef FXCG
+  int dx=34, dy=7;
+#else
+  int dx=34, dy=20;
+#endif
   // confirm("sb",giac::print_INT_(sb).c_str());
   if (scale){
     for (int y = -border; y < size + border; y++) {
       for (int x = -border; x < size + border; x++) {
-        drawRectangle(4+scale*(border+x),4+scale*(border+y),scale,scale,qrcodegen_getModule(qrcode, x, y)?0:0xffff);
+        drawRectangle(dx+scale*(border+x),dy+scale*(border+y),scale,scale,qrcodegen_getModule(qrcode, x, y)?0:0xffff);
       }
     }
   }
@@ -17486,7 +17561,7 @@ string replace_html5(const string & s){
 }
 
 void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONTEXT){
-#ifdef NUMWORKS_SLOTB
+#if 0 // def NUMWORKS_SLOTB
   qr=false;
 #endif
     console_changed=0;
@@ -17520,6 +17595,9 @@ void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONT
     // save console state
     int pos=1;
     string qrs=lang?"https://www-fourier.univ-grenoble-alpes.fr/~parisse/xcasfr.html#":"https://www-fourier.univ-grenoble-alpes.fr/~parisse/xcasen.html#";//"https://xcas.univ-grenoble-alpes.fr/xcasjs/#";
+    qrs += "filename=";
+    qrs += filename;
+    qrs += '&';
     qrs += xcas_python_eval==1?"micropy=":"cas=";
     if (qr) qrs += "0,0,"+replace_html5(script)+'&';
     // save console state
@@ -18516,7 +18594,7 @@ void numworks_certify_internal(){
 
 
   int restore_session(const char * fname,GIAC_CONTEXT){
-    // cout << "0" << fname << "\n"; Console_Disp(1); GetKey(&key);
+    //confirm("restore session",fname); 
     string filename(remove_path(remove_extension(fname)));
 #ifdef NSPIRE_NEWLIB
     if (file_exists((filename+".xw.tns").c_str()))
@@ -18531,19 +18609,25 @@ void numworks_certify_internal(){
 #endif
     if (!load_console_state_smem(filename.c_str(),contextptr)){
       dbgprintf("restore_session not found\n");
+#if !defined NUMWORKS_SLOTBFR && !defined NUMWORKS_SLOTBEN
       if (confirm("OK: Francais, Back: English","set_language(1|0)")==KEY_CTRL_F6)
         lang=0;
+#endif
       numworks_certify_internal();
       Bdisp_AllClr_VRAM();
       int x=0,y=0;
-      PrintMini(x,y,"KhiCAS 1.9 (c) 2022 B. Parisse",TEXT_MODE_NORMAL, COLOR_BLACK, COLOR_WHITE);
+      PrintMini(x,y,"KhiCAS 1.9 (c) 2024 B. Parisse",TEXT_MODE_NORMAL, COLOR_BLACK, COLOR_WHITE);
       y +=18;
       PrintMini(x,y,"et al, License GPL 2",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
       y += 18;
 #ifdef NSPIRE_NEWLIB
       PrintMini(x,y,((lang==1)?"Taper menu plusieurs fois":"Type menu several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
 #else
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
+      PrintMini(x,y,((lang==1)?"Taper shift-EXE":"Type shift-EXE"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+#else
       PrintMini(x,y,((lang==1)?"Taper HOME plusieurs fois":"Type HOME several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+#endif
 #endif
       y += 18;
       PrintMini(x,y,((lang==1)?"pour quitter KhiCAS.":"to leave KhiCAS."),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
@@ -18563,7 +18647,11 @@ void numworks_certify_internal(){
 	*logptr(contextptr) << "Xcas interpreter, Python compatible mode\n";
       }
 #else
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
+      PrintMini(x,y,(lang==1)?"quittez Khicas (HOME)":"Leave Khicas (HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+#else
       PrintMini(x,y,(lang==1)?"quittez Khicas (HOME HOME HOME)":"Leave Khicas (HOME HOME HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+#endif
       if (confirm("Interpreter? OK: Xcas, Back: MicroPython",(lang==1?"Peut se modifier depuis menu configuration":"May be changed later from menu configuration"),false,130)==KEY_CTRL_F6){
 	python_compat(4,contextptr);
 	xcas_python_eval=1;
@@ -18578,6 +18666,22 @@ void numworks_certify_internal(){
       }
 #endif
 #ifdef NUMWORKS
+#if defined NUMWORKS_SLOTAB || defined NUMWORKS_SLOTB
+      if (lang==1){
+	*logptr(contextptr) << "!!! DU CAS POUR TOUS !!!\n";
+	*logptr(contextptr) << "Le calcul formel est autorise\n";
+        *logptr(contextptr) << "aux examens en France.\n";
+	*logptr(contextptr) << "Mobilisez-vous! Numworks peut\n";
+	*logptr(contextptr) << "authentifier et rendre KhiCAS\n";
+	*logptr(contextptr) << "utilisable en mode exam comme\n";
+	*logptr(contextptr) << "sur les calcs CAS plus cheres\n";
+      } else {
+	*logptr(contextptr) << "!!! BEWARE !!!\n";
+	*logptr(contextptr) << "Make sure that CAS is allowed\n";
+	*logptr(contextptr) << "if you are using KhiCAS during\n";
+	*logptr(contextptr) << "a test\n";
+      }
+#else
       if (lang==1){
 	*logptr(contextptr) << "!!! ATTENTION !!!\n";
 	*logptr(contextptr) << "Ne faites pas de mises a jour\n";
@@ -18591,6 +18695,7 @@ void numworks_certify_internal(){
 	*logptr(contextptr) << "They lock your calculator\n";
 	*logptr(contextptr) << "it's incompatible with KhiCAS\n";
       }
+#endif
 #endif
       Bdisp_AllClr_VRAM();
 #ifdef GIAC_SHOWTIME
@@ -18637,20 +18742,19 @@ void numworks_certify_internal(){
     }
 #endif
     if (!load_console_state_smem(filename.c_str(),contextptr)){
-#ifdef NUMWORKS
-      if (confirm("OK: Francais, Back: English","set_language(1|0)")==KEY_CTRL_F6)
-	lang=0;
-      Bdisp_AllClr_VRAM();
-#endif
       int x=0,y=0;
-      PrintMini(x,y,"KhiCAS 1.6 (c) 2020 B. Parisse",TEXT_MODE_NORMAL, COLOR_BLACK, COLOR_WHITE);
+      PrintMini(x,y,"KhiCAS 1.9 (c) 2024 B. Parisse",TEXT_MODE_NORMAL, COLOR_BLACK, COLOR_WHITE);
       y +=18;
       PrintMini(x,y,"et al, License GPL 2",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
       y += 18;
 #ifdef NSPIRE_NEWLIB
       PrintMini(x,y,((lang==1)?"Taper menu plusieurs fois":"Type menu several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
 #else
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
+      PrintMini(x,y,((lang==1)?"Taper HOME":"Type HOME"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+#else
       PrintMini(x,y,((lang==1)?"Taper HOME plusieurs fois":"Type HOME several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+#endif
 #endif
       y += 18;
       PrintMini(x,y,((lang==1)?"pour quitter KhiCAS.":"to leave KhiCAS."),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
@@ -18670,7 +18774,11 @@ void numworks_certify_internal(){
 	*logptr(contextptr) << "Xcas interpreter, Python compatible mode\n";
       }
 #else
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
+      PrintMini(x,y,(lang==1)?"quittez Khicas (HOME)":"Leave Khicas (HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+#else
       PrintMini(x,y,(lang==1)?"quittez Khicas (HOME HOME HOME)":"Leave Khicas (HOME HOME HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+#endif
       if (confirm("Interpreter? OK: Xcas, Back: MicroPython",(lang==1?"Peut se modifier depuis menu configuration":"May be changed later from menu configuration"),false,130)==KEY_CTRL_F6){
 	python_compat(4,contextptr);
 	xcas_python_eval=1;
@@ -18718,7 +18826,7 @@ void numworks_certify_internal(){
   // storage==0 (default) ram on numworks, ==1 flash on numworks, ==2 both on numworks, ignored on other calcs
   int giac_filebrowser(char * filename,const char * extension,const char * title,int storage){
 #ifdef HP39
-    if (strlen(extension)<=3 && extension[0]!='*'){
+    if (extension && strlen(extension)<=3 && extension[0]!='*'){
       char ext[16]="*.";
       strcat(ext,extension);
       return fileBrowser(filename,ext,title);
@@ -18730,7 +18838,7 @@ void numworks_certify_internal(){
     const char * filenames[MAX_NUMBER_OF_FILENAMES+1];
 #if 1 // def XWASPY
     int n,choix;
-    bool isxw=strcmp(extension,"xw")==0,ispy=strcmp(extension,"py")==0;
+    bool isxw=extension && strcmp(extension,"xw")==0,ispy=extension && strcmp(extension,"py")==0;
     if (isxw || ispy){
       n=os_file_browser(filenames,MAX_NUMBER_OF_FILENAMES,"py",storage);
       if (n==0 && ispy) return 0;
@@ -18763,14 +18871,14 @@ void numworks_certify_internal(){
       return choix+1;
     }
     else  {
-      int n=os_file_browser(filenames,MAX_NUMBER_OF_FILENAMES,extension,storage);
+      n=os_file_browser(filenames,MAX_NUMBER_OF_FILENAMES,extension,storage);
       if (n==0) return 0;
-      int choix=select_item(filenames,title?title:"Scripts");
+      choix=select_item(filenames,title?title:"Scripts");
     }
 #else
-    int n=os_file_browser(filenames,MAX_NUMBER_OF_FILENAMES,extension,storage);
+    n=os_file_browser(filenames,MAX_NUMBER_OF_FILENAMES,extension,storage);
     if (n==0) return 0;
-    int choix=select_item(filenames,title?title:"Scripts");
+    choix=select_item(filenames,title?title:"Scripts");
 #endif
     if (choix<0 || choix>=n) return 0;
     strcpy(filename,filenames[choix]);
@@ -18779,7 +18887,7 @@ void numworks_certify_internal(){
   
   void erase_script(){
     char filename[MAX_FILENAME_SIZE+1];
-    int res=giac_filebrowser(filename, "py", "Scripts");
+    int res=giac_filebrowser(filename, 0, "Erase"); // was "py" instead of 0
     if (res && do_confirm((lang==1)?"Vraiment effacer":"Really erase?")){
       erase_file(filename);
     }
@@ -18905,7 +19013,11 @@ void numworks_certify_internal(){
 	  confirm((lang==1)?"Taper ctrl puis r pour executer session ":"Type ctrl then r to run session","Enter: OK");
 #endif
 #ifdef NUMWORKS
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
+	  confirm((lang==1)?"Taper shift-EXE 6 pour executer session ":"Type shift-EXE 6 to run session","Enter: OK");
+#else
 	  confirm((lang==1)?"Taper shift EXE pour executer session ":"Type shift then EXE to run session","Enter: OK");
+#endif
 #endif
 	  ctrl_r=false;
 	}
@@ -19122,7 +19234,7 @@ void numworks_certify_internal(){
       if (key==KEY_CTRL_MENU){
 #if 1
 	Menu smallmenu;
-#if defined NUMWORKS && defined DEVICE
+#if defined NUMWORKS && defined DEVICE && !defined NUMWORKS_SLOTAB && !defined NUMWORKS_SLOTB
 	smallmenu.numitems=20;
 #else
 	smallmenu.numitems=17;
@@ -19167,7 +19279,7 @@ void numworks_certify_internal(){
 #else
 	  smallmenuitems[16].text = (char*) ((lang==1)?"Quitter (HOME)":"Quit");
 #endif
-#if defined NUMWORKS && defined DEVICE
+#if defined NUMWORKS && defined DEVICE && !defined NUMWORKS_SLOTAB && !defined NUMWORKS_SLOTB
 	  smallmenuitems[16].text = (char*) ((lang==1)?"Reboot autre firmware":"Reboot alt. firmware");
 	  smallmenuitems[17].text = (char*) ((lang==1)?"Sauvegarde multi-firmware":"Backup multi-firmware");
 	  smallmenuitems[18].text = (char*) ((lang==1)?"Restauration multi-firmware":"Restore multi-firmware");
@@ -19181,7 +19293,7 @@ void numworks_certify_internal(){
 	    return KEY_SHUTDOWN;
 	  int sres = doMenu(&smallmenu);
 	  if(sres == MENU_RETURN_SELECTION || sres==KEY_CTRL_EXE) {
-#if defined NUMWORKS && defined DEVICE
+#if defined NUMWORKS && defined DEVICE && !defined NUMWORKS_SLOTAB && !defined NUMWORKS_SLOTB
 	    if (smallmenu.selection==17){
 	      int b1=is_valid(0),b2=is_valid(1),b3=is_valid(2);
 	      const char * boot_tab[]={b1?"Slot 1":"Invalid slot 1",b2?"Slot 2":"Invalid slot 2",b3?"Slot 3":"Invalid slot 3","Bootloader","Cancel/Annuler",0};
@@ -19540,7 +19652,7 @@ void numworks_certify_internal(){
 #endif
 	return Console_Input(tmp);
       }
-      const char * ptr=keytostring(key,keyflag,0,contextptr);
+      const char * ptr=keytostring(key,keyflag,xcas_python_eval==1,contextptr);
       if (ptr){
 	Console_Input((const char *)ptr);
 	Console_Disp(1,contextptr);
@@ -19692,19 +19804,17 @@ const char *Console_Draw_FMenu(int key, struct FMenu *menu, char *cfg, int activ
   box.bottom = 113;  
   box.top = box.bottom - nb_entries * 14; 
   //giac::confirm((giac::print_INT_(box.left)+" "+giac::print_INT_(box.top)).c_str(),(giac::print_INT_(box.right)+" "+giac::print_INT_(box.bottom)).c_str(),false);
-  drawRectangle(box.left,box.top,box.right-box.left+1,box.bottom-box.top+1,_WHITE);
-  giac::freeze=true; // temporary workaround
-  giac::draw_line(box.left, box.bottom, box.left, box.top,0,contextptr);
-  giac::draw_line(box.right, box.bottom, box.right, box.top,0,contextptr);
-  giac::freeze=false;
 
   // If the cursor is flashing on the opening box, disable it. //!!!!!!
   // if (((Cursor.x * (256 / 21) < box.right && Cursor.x * (256 / 21) > box.left)) && ((Cursor.y * (128 / 8) < box.bottom) && (Cursor.y * (128 / 8) > box.top))) Cursor_SetFlashOff();
 
-  for (;;)
-  {
-    for (i = 0; i < nb_entries; i++)
-    {
+  for (;;){
+    drawRectangle(box.left,box.top,box.right-box.left+1,box.bottom-box.top+1,_WHITE);
+    giac::freeze=true; // temporary workaround
+    giac::draw_line(box.left, box.bottom, box.left, box.top,0,contextptr);
+    giac::draw_line(box.right, box.bottom, box.right, box.top,0,contextptr);
+    giac::freeze=false;
+    for (i = 0; i < nb_entries; i++){
       quick[0] = '0' + (i + 1);
       PrintMini(3 + position_x, box.bottom - 14 * (i + 1), quick, MINI_OVER); //!!!!!
       PrintMini(3 + position_x + quick_len * 8, box.bottom - 14 * (i + 1), entries[i], MINI_OVER); //!!!!!
@@ -19805,16 +19915,16 @@ const char *Console_Draw_FMenu(int key, struct FMenu *menu, char *cfg, int activ
     box3.bottom=3*box.bottom+22;
     box3.top=3*box.top+20;
     giac::freeze=true; // avoid clearscreen
-    drawRectangle(box3.left,box3.top,box3.right-box3.left,box3.bottom-box3.top,COLOR_WHITE);
-    drawLine(box3.left, box3.top, box3.right, box3.top,COLOR_BLACK);
-    drawLine(box3.left, box3.bottom, box3.left, box3.top,COLOR_BLACK);
-    drawLine(box3.right, box3.bottom, box3.right, box3.top,COLOR_BLACK);
-    drawLine(box3.left, box3.bottom, box3.right, box3.bottom,COLOR_BLACK);
     giac::freeze=false; // temporary workaround
     
     // Cursor_SetFlashOff();
     
     for (;;){
+      drawRectangle(box3.left,box3.top,box3.right-box3.left,box3.bottom-box3.top,COLOR_WHITE);
+      drawLine(box3.left, box3.top, box3.right, box3.top,COLOR_BLACK);
+      drawLine(box3.left, box3.bottom, box3.left, box3.top,COLOR_BLACK);
+      drawLine(box3.right, box3.bottom, box3.right, box3.top,COLOR_BLACK);
+      drawLine(box3.left, box3.bottom, box3.right, box3.bottom,COLOR_BLACK);
       for(i=0; i<nb_entries; i++) {
         quick[0] = '0'+(i+1);
         PrintMini(3+position_x, box.bottom-7*i, quick, 0);
@@ -20360,7 +20470,11 @@ void PrintRev(const char *s,int color,bool colorsyntax,GIAC_CONTEXT) {
         drawRectangle(0,(i+istatus)*shell_fonth,LCD_WIDTH_PX,shell_fonth,_WHITE);
       string menu;
 #ifndef HP39 
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
+      menu += "shift-EXE menu|1 ";
+#else
       menu += "shift-1 ";
+#endif
 #endif
       menu += string(menu_f1);
 #ifdef HP39
@@ -20415,7 +20529,7 @@ void PrintRev(const char *s,int color,bool colorsyntax,GIAC_CONTEXT) {
 	if (return_val == KEY_CTRL_MENU) return 0;
 	if (return_val == CONSOLE_MEM_ERR) return NULL;
       } while (return_val != CONSOLE_NEW_LINE_SET);
-
+    reset_kbd();
     return Line[Current_Line - 1].str;
   }
 
@@ -20660,6 +20774,7 @@ void PrintRev(const char *s,int color,bool colorsyntax,GIAC_CONTEXT) {
 
   int console_main(GIAC_CONTEXT,const char * sessionname){
 #if defined NUMWORKS && defined DEVICE
+    os_set_pixel(0, 0, 0x7ff); 
     // insure value not too high (_heap_size depends on launcher firmware)
     if (pythonjs_heap_size>_heap_size-52*1024)
       pythonjs_heap_size=_heap_size-52*1024;
@@ -20809,6 +20924,9 @@ void PrintRev(const char *s,int color,bool colorsyntax,GIAC_CONTEXT) {
         save("session",false,contextptr);
 #endif
         run(expr,7,contextptr);
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB // add auto-save, to avoid last line lost when pressing HOME
+        save("session",false,contextptr);
+#endif
       }
       //print_mem_info();
       Console_NewLine(LINE_TYPE_OUTPUT,1);
@@ -21316,7 +21434,14 @@ int select_item(const char ** ptr,const char * title,bool askfor1){
 }
 
 int select_interpreter(){
-  const char * choix[]={"Xcas interpreter","Xcas compat Python ^=**","Xcas compat Python ^=xor","MicroPython interpreter","Javascript (QuickJS)",0};
+  const char * choix[]={"Xcas interpreter","Xcas compat Python ^=**","Xcas compat Python ^=xor",
+#ifdef MICROPY_LIB
+    "MicroPython interpreter",
+#endif
+#ifdef QUICKJS
+    "Javascript (QuickJS)",
+#endif
+    0};
   return select_item(choix,"Syntax",false);
 }
 
@@ -22617,7 +22742,13 @@ int do_shutdown(){
 
 // string translations
 #ifdef NUMWORKS
+#ifdef NUMWORKS_SLOTB
+typedef const char * const char4[9];
+const char4 aspen_giac_translations [] = {};
+const int aspen_giac_records=0;
+#else
 #include "numworks_translate.h"
+#endif
 #else
 #include "aspen_translate.h"
 #endif

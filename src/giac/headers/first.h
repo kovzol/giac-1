@@ -31,6 +31,12 @@
 
 #ifdef NUMWORKS
 #define KHICAS 1
+#ifdef NUMWORKS_SLOTBFR
+#define NUMWORKS_SLOTB
+#endif
+#ifdef NUMWORKS_SLOTBEN
+#define NUMWORKS_SLOTB
+#endif
 #endif
 
 #ifndef GIAC_VERSION
