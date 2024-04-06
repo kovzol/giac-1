@@ -2438,6 +2438,10 @@ namespace giac {
 #ifdef GIAC_64VARS
     if (x_.tab[0]%2){
       idx.resize(dim);
+      if (dim && sizeof(degtype)==sizeof(idx.front())){
+        memcpy(&idx.front(),x_.ui+1,dim*sizeof(degtype));
+        return;
+      }
       const degtype * ptr=(degtype *)(x_.ui+1),*ptrend=ptr+x_.order_.dim;
       index_t::iterator target=idx.begin();
       for (;ptr!=ptrend;++target,++ptr)
@@ -4856,6 +4860,7 @@ namespace giac {
   void reducesmallmod(polymod<tdeg_t,modint_t> & rem,const vectpolymod<tdeg_t,modint_t> & res,const vector<unsigned> & G,unsigned excluded,modint_t env,polymod<tdeg_t,modint_t> & TMP1,bool normalize,int start_index=0,bool topreduceonly=false,vectpolymod<tdeg_t,modint_t>*remcoeffsptr=0,vector< vectpolymod<tdeg_t,modint_t> > * coeffsmodptr=0,int strategy=0){
     vector< polymod<tdeg_t,modint_t> > addtoremcoeffs(remcoeffsptr?remcoeffsptr->size():0);
     strategy /= 1000;
+    strategy %= 1000;
     if (debug_infolevel>1000){
       rem.dbgprint();
       if (!rem.coord.empty()) rem.coord.front().u.dbgprint();
@@ -14142,7 +14147,7 @@ Let {f1, ..., fr} be a set of polynomials. The Gebauer-Moller Criteria are as fo
       return t1*T1*d1*D1+t2*T2*d2*D2;
     if (strategy==7)
       return (D1+N*d1)*(N*t1+T1)+(D2+N*d2)*(N*t2+T2);
-    if (strategy==6 || strategy==0)
+    if (strategy==6)// || strategy==0) was default with topreduceonly=true
       return t1*T1+t2*T2;
     if (strategy==5)
       return D1*T1+D2*T2;
@@ -14189,6 +14194,7 @@ Let {f1, ..., fr} be a set of polynomials. The Gebauer-Moller Criteria are as fo
   template<class tdeg_t,class modint_t,class modint_t2>
   bool in_zgbasis(vectpolymod<tdeg_t,modint_t> &resmod,unsigned ressize,vector<unsigned> & G,modint_t env,bool totdeg,vector< paire > * pairs_reducing_to_zero,vector< zinfo_t<tdeg_t> > & f4buchberger_info,bool recomputeR,bool eliminate_flag,bool multimodular,int parallel,bool interred,const gbasis_param_t & gparam,vector< vectpolymod<tdeg_t,modint_t> > * coeffsmodptr){
     int strategy=gparam.buchberger_select_strategy;
+    bool topreduceonly=strategy/1000000;
     vectpolymod<tdeg_t,modint_t> resmodorig(resmod); resmodorig.resize(ressize);
     unsigned generators=ressize;
     bool seldeg=true; int sel1=0;
@@ -14542,7 +14548,7 @@ Let {f1, ..., fr} be a set of polynomials. The Gebauer-Moller Criteria are as fo
           if (debug_infolevel>2){
             CERR << CLOCK()*1e-6 << " mod reduce begin, pair " << bk << " spoly size " << TMP1.coord.size() << " totdeg deg " << TMP1.coord.front().u.total_degree(order) << " degree " << TMP1.coord.front().u << ", pair degree " << resmod[bk.first].coord.front().u << resmod[bk.second].coord.front().u << '\n';
           }
-          reducesmallmod(TMP1,resmod,G,-1,env,TMP2,true,0,true,&newcoeffs,coeffsmodptr,strategy);
+          reducesmallmod(TMP1,resmod,G,-1,env,TMP2,true,0,topreduceonly,&newcoeffs,coeffsmodptr,strategy);
           // insure that new basis element has positive coord, required by zf4mod
           typename vector< T_unsigned<modint_t,tdeg_t> >::iterator it=TMP1.coord.begin(),itend=TMP1.coord.end();
           for (;it!=itend;++it){
@@ -14699,7 +14705,7 @@ Let {f1, ..., fr} be a set of polynomials. The Gebauer-Moller Criteria are as fo
 	if (debug_infolevel>2){
 	  CERR << CLOCK()*1e-6 << " mod reduce begin, pair " << bk << " spoly size " << TMP1.coord.size() << " totdeg deg " << TMP1.coord.front().u.total_degree(order) << " degree " << TMP1.coord.front().u << ", pair degree " << resmod[bk.first].coord.front().u << resmod[bk.second].coord.front().u << '\n';
 	}
-	reducesmallmod(TMP1,resmod,G,-1,env,TMP2,true,0,true,&newcoeffs,coeffsmodptr,strategy);
+	reducesmallmod(TMP1,resmod,G,-1,env,TMP2,true /* normalize */,0/* start index*/,topreduceonly,&newcoeffs,coeffsmodptr,strategy);
 	// insure that new basis element has positive coord, required by zf4mod
 	typename vector< T_unsigned<modint_t,tdeg_t> >::iterator it=TMP1.coord.begin(),itend=TMP1.coord.end();
 	for (;it!=itend;++it){
@@ -19706,13 +19712,13 @@ void G_idn(vector<unsigned> & G,size_t s){
     }
   }
 
-bool gbasis8(const vectpoly & v,order_t & order,vectpoly & newres,environment * env,bool modularalgo,bool modularcheck,int & rur,GIAC_CONTEXT,gbasis_param_t gbasis_param,vector<vectpoly> * coeffsptr){
+  bool gbasis8(const vectpoly & v,order_t & order,vectpoly & newres,environment * env,bool modularalgo,bool modularcheck,int & rur,GIAC_CONTEXT,gbasis_param_t gbasis_param,vector<vectpoly> * coeffsptr){
     bool & eliminate_flag=gbasis_param.eliminate_flag;
     if (gbasis_param.buchberger_select_strategy==-1 && !v.empty()){
       if (GBASIS_COEFF_STRATEGY)
         gbasis_param.buchberger_select_strategy=GBASIS_COEFF_STRATEGY;
       else
-        gbasis_param.buchberger_select_strategy=(coeffsptr && v.front().dim<=8)?1:0;
+        gbasis_param.buchberger_select_strategy=(coeffsptr && v.front().dim<=8)?1000001/* topreduceonly=true */:0;
       if (debug_infolevel)
         CERR << "strategy " << gbasis_param.buchberger_select_strategy << "\n";     }
     bool interred=gbasis_param.interred;
