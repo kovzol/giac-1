@@ -3785,6 +3785,7 @@ extern "C" void Sleep(unsigned int miliSecond);
   int MAX_PRINTABLE_ZINT=10000;
   int MAX_RECURSION_LEVEL=9;
   int GBASIS_COEFF_STRATEGY=0;
+  float GBASIS_COEFF_MAXLOGRATIO=2;
   int GBASIS_DETERMINISTIC=20;
   int GBASISF4_MAX_TOTALDEG=1024;
   int GBASISF4_MAXITER=256;
@@ -3839,6 +3840,7 @@ extern "C" void Sleep(unsigned int miliSecond);
   int MAX_PRINTABLE_ZINT=1000000;
   int MAX_RECURSION_LEVEL=100;
   int GBASIS_COEFF_STRATEGY=0;
+  float GBASIS_COEFF_MAXLOGRATIO=2;
   int GBASIS_DETERMINISTIC=50;
   int GBASISF4_MAX_TOTALDEG=16384;
   int GBASISF4_MAXITER=1024;
@@ -5414,6 +5416,10 @@ NULL,NULL,SW_SHOWNORMAL);
     if (getenv("GBASIS_COEFF_STRATEGY")){
       GBASIS_COEFF_STRATEGY=atoi(getenv("GBASIS_COEFF_STRATEGY"));
       CERR << "// Setting gbasis_coeff_strategy to " << GBASIS_COEFF_STRATEGY << '\n';
+    }
+    if (getenv("GBASIS_COEFF_MAXLOGRATIO")){
+      GBASIS_COEFF_MAXLOGRATIO=atof(getenv("GBASIS_COEFF_MAXLOGRATIO"));
+      CERR << "// Setting gbasis_coeff_maxlogratio to " << GBASIS_COEFF_MAXLOGRATIO << '\n';
     }
     if (getenv("GIAC_PRINTPROG")){ 
       // force print of prog at parse, 256 for python compat mode print
@@ -7942,6 +7948,20 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
     return res;
   }
 
+  string replace(const string & s,char c1,const string & c2){
+    string res;
+    int l=s.size();
+    res.reserve(l);
+    const char * ch=s.c_str();
+    for (int i=0;i<l;++i,++ch){
+      if (*ch==c1)
+        res += c2;
+      else
+        res += *ch;
+    }
+    return res;
+  }
+
   static string remove_comment(const string & s,const string &pattern,bool rep){
     string res(s);
     for (;;){
@@ -8320,6 +8340,12 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
     res=remove_comment(res,"\"\"\"",true);
     res=remove_comment(res,"'''",true);
     res=glue_lines_backslash(res);
+    first=res.find('\t');
+    if (first>=0 && first<res.size()){
+      // replace all tabs by n spaces, n==4
+      string reptab(4,' ');
+      res=replace(res,'\t',reptab);
+    }
     vector<int_string> stack;
     string s,cur; 
     s.reserve(res.capacity());
@@ -8548,7 +8574,7 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
       }
       if (instring){
 	*logptr(contextptr) << "Warning: multi-line strings can not be converted from Python like syntax"<<'\n';
-	return s_orig;
+	return cur+'"';
       }
       // detect : at end of line
       for (pos=int(cur.size())-1;pos>=0;--pos){
