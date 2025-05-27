@@ -313,7 +313,11 @@ namespace giac {
       r=select_root(*b1._VECTptr,contextptr); 
     if (is_undef(r))
       return algebraic_EXTension(a1,b1);
-    return horner(*a1._VECTptr,r);
+    r=horner(*a1._VECTptr,r);
+    gen rr,ri; reim(r,rr,ri,contextptr);
+    if (!has_i(b) && is_greater(epsilon(contextptr),abs(ri/rr,contextptr),contextptr))
+      r=rr;
+    return r;
   }
 
   gen ext_reduce(const gen & a, const gen & v){
@@ -1944,6 +1948,8 @@ namespace giac {
       return fastsign(g,contextptr);
     gen v0(v[0]);
     for (int i=0;i<s;++i){ // replace by first idnt with an assumption
+      if (v[i]==cst_pi || v[i]==cst_euler_gamma)
+        continue;
       if (v[i].type==_IDNT && v[i]._IDNTptr->eval(1,v[i],contextptr).type!=_IDNT){
 	v0=v[i];
       }

@@ -5,9 +5,17 @@ plugins {
 
 apply from: '../repositories.gradle'
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(11)
+    }
+    withSourcesJar()
+}
+
+
 dependencies {
-    api 'org.gwtproject:gwt-dev:2.11.0',
-        'org.treblereel.gwt.gwtproject.resources:gwt-resources-api:202402231',
+    api 'org.gwtproject:gwt-user:2.12.1',
+        'org.treblereel.gwt.gwtproject.resources:gwt-resources-api:202408061',
         // old version, FIXME
         'com.google.gwt:gwt-dev:2.9.0',
         'com.google.gwt:gwt-user:2.9.0'
@@ -16,15 +24,15 @@ dependencies {
 
 compileJava.options.sourcepath = files(processResources.destinationDir).builtBy(processResources)
 
-task prepareJs(type:Copy, dependsOn: project.getParent().createGiacWasmJs) {
+tasks.register("prepareJs", Copy) {
+    dependsOn project.getParent().createGiacWasmJs
     from "${project.getParent().buildDir}/binaries/giacggb.wasm"
     into file("src/main/resources/fr/grenoble/ujf/giac")
     include "giac.wasm.js"
 }
 
-task sourcesJar(type: Jar, dependsOn: "classes") {
-    classifier = 'sources'
-    from sourceSets.main.allSource
+tasks.sourcesJar {
+    dependsOn('classes')
     from files(file("build/generated/sources/annotationProcessor/java/main/"))
 }
 
@@ -37,16 +45,10 @@ publishing {
             groupId = 'fr.ujf-grenoble'
             version = project.getParent().ggrev
             from components.java
-            artifact sourcesJar
             pom {
                 name = 'Giac for GWT'
                 description = 'GWT bining for giac.wasm.js'
             }
         }
     }
-}
-
-java {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
 }

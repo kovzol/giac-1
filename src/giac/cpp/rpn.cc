@@ -751,7 +751,17 @@ namespace giac {
   }
 #endif
 
-  gen _VARS(const gen & args,const context * contextptr) {
+  gen _VARS(const gen & args_,const context * contextptr) {
+    gen args(args_);
+    bool assume=false;
+    if (args.type==_VECT && args._VECTptr->size()==2 && args._VECTptr->back()==at_assume){
+      assume=true;
+      args=args._VECTptr->front();
+    }
+    if (args==at_assume){
+      assume=true;
+      args=gen(vecteur(0),_SEQ__VECT);
+    }
     if ( args.type==_STRNG && args.subtype==-1) return  args;
     bool val=is_one(args);
     bool valonly=args==-2;
@@ -762,12 +772,17 @@ namespace giac {
     if (contextptr){
       if (contextptr->globalcontextptr && contextptr->globalcontextptr->tabptr){
 	sym_tab::const_iterator it=contextptr->globalcontextptr->tabptr->begin(),itend=contextptr->globalcontextptr->tabptr->end();
-#if defined FXCG || defined GIAC_HAS_STO_38 || defined KHICAS
+#if defined FXCG || defined GIAC_HAS_STO_38 || defined KHICAS || defined SDL_KHICAS 
 	vecteur * keywordsptr=0;
 #else
 	vecteur * keywordsptr=keywords_vecteur_ptr();
 #endif
 	for (;it!=itend;++it){
+          if (assume){
+            gen tmp=it->second;
+            if (tmp.type!=_VECT || tmp.subtype!=_ASSUME__VECT)
+              continue;
+          }
 	  lastprog_name(it->first,contextptr);
 	  gen g=identificateur(it->first);
 	  if (keywordsptr==0 || !equalposcomp(*keywordsptr,g)){
@@ -882,8 +897,13 @@ namespace giac {
     }
     // purge a global variable
     sym_tab::iterator it=contextptr->tabptr->find(ch),itend=contextptr->tabptr->end();
-    if (it==itend)
+    if (it==itend){
+#if 1 //def GIAC_HAS_STO_38
+      if (contextptr && contextptr->previous!=contextptr)
+        return purgenoassume(args,contextptr->previous);
+#endif
       return string2gen("No such variable "+args.print(contextptr),false);
+    }
     gen res=it->second;
     if (it->second.type==_POINTER_ && it->second.subtype==_THREAD_POINTER)
       return gentypeerr(args.print(contextptr)+" is locked by thread "+it->second.print(contextptr));
@@ -990,7 +1010,8 @@ namespace giac {
 	return val;
       }
     }
-    if (args._IDNTptr->value){
+    if (args._IDNTptr->value && args._IDNTptr->ref_count_ptr!=(int *)-1){
+      // *logptr(contextptr) << "Purging " << args <<  " refs " << *(args._IDNTptr->ref_count_ptr) << "\n";
 #if !defined RTOS_THREADX && !defined BESTA_OS && !defined FREERTOS && !defined FXCG
       if (variables_are_files(contextptr))
 	unlink((args._IDNTptr->name()+string(cas_suffixe)).c_str());
@@ -1009,7 +1030,8 @@ namespace giac {
       return res;
     }
     else
-      return string2gen(args.print(contextptr)+" not assigned",false);
+      return string2gen("No such variable "+args.print(contextptr),false);
+    //return string2gen(args.print(contextptr)+" not assigned",false);
   }
   static const char _purge_s []="purge";
   static define_unary_function_eval_quoted (__purge,&_purge,_purge_s);
@@ -1951,7 +1973,9 @@ namespace giac {
   define_unary_function_ptr5( at_INT ,alias_at_INT,&__INT,0,T_UNARY_OP_38);
 
   static int taylorxn=0;
+  gen exactify_pow(const gen & g);
   static void hp38_eval(vecteur & v,gen & x,gen& newx,GIAC_CONTEXT){
+    v[0]=exactify_pow(v[0]);
     x=v[1];
     if (is_equal(x))
       x=x._SYMBptr->feuille[0];
@@ -3949,7 +3973,73 @@ namespace giac {
     return res;
   }
 
+  // BEWARE: args below are assumed to be positive
+  // n is assumed to be strictly smaller than 2^31
+  // ninv is inverse of n mod R, positive
+  // a is in [0,R*n[
+  // %R and /R should be replaced by shifts or & later
+  int monty_reduce(longlong a,int n,int ninv,longlong R){
+    longlong m=((a%R)*ninv)%R;
+    a -= m*n;
+    int A=a/R;
+    A += (A>>31) & n; // make A positive
+    return A;
+  }
+
+  int to_monty(int a,int n,int ninv,longlong R,longlong R2modn){
+    if (a<0) a+=n;
+    return monty_reduce(a*R2modn,n,ninv,R);
+  }
+
+  int monty_mul(int a,int b,int n,int ninv,longlong R,longlong R2modn){
+    return monty_reduce(a*longlong(b),n,ninv,R);
+  }
+
   gen _tests(const gen & g0,GIAC_CONTEXT){
+    if (g0.type==_VECT){
+      vecteur & v =*g0._VECTptr;
+      if (v.size()>=3){
+        int a=v[0].val; 
+        int b=v[1].val;
+        int n=v[2].val;
+        longlong R=1LL << 32;
+        int Rmodn=R%n;
+        int R2modn=(R*Rmodn) % n;
+        int ninv=invmodll(n,R);
+        if (ninv<0)
+          ninv+=R;
+        if (R==1LL<<32){
+          int A=to_monty2(a,n,ninv,R2modn);
+          int B=to_monty2(b,n,ninv,R2modn);
+          if (v.size()>3){ // used for compared timings
+            int N=v[3].val;
+            bool mod=N<0;
+            if (mod) N=-N;
+            int tmp=0;
+            if (mod){
+              for (int i=0;i<N-1;++i){
+                tmp += (longlong(i)*B)%n;
+              }
+            }
+            for (int i=0;i<N-1;++i){
+              tmp += monty_mul(i,B,n,ninv,R,R2modn);
+            }
+          }
+          int C=monty_mul2(A,B,n,ninv);
+          int c=monty_reduce2(C,n,ninv);
+          return c;
+        }
+        else {
+          int A=to_monty(a,n,ninv,R,R2modn);
+          int B=to_monty(b,n,ninv,R,R2modn);
+          int C=monty_mul(A,B,n,ninv,R,R2modn);
+          int c=monty_reduce(C,n,ninv,R);
+          return c;
+        }
+      }
+    }
+    return undef;
+    /* ******************************************* */
     // return eval_before_diff(g0,vx_var,contextptr);
     if (g0.type==_VECT){
       vecteur expr,vars;

@@ -15,6 +15,9 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
+const char fourier_url[]="https://www-fourier.univ-grenoble-alpes.fr/~parisse/";
+
+#define MAX_DISP_RADIUS 2048 // max displayable circle radius in pixels 
 #include "config.h"
 #include "giacPCH.h"
 #if defined HAVE_UNISTD_H && !defined NUMWORKS && !defined HP39
@@ -29,7 +32,9 @@
 #include <syscall.h>
 #include "sha256.h"
 #endif
+#ifdef HAVE_ALLOCA_H
 #include <alloca.h>
+#endif
 #ifndef is_cx2
 #define is_cx2 false
 #endif
@@ -53,18 +58,64 @@ int shell_x=0,shell_y=0,shell_fontw=12,shell_fonth=18;
 // pour le mode examen cx2, il y a 2 endroits ou is_cx2 est utilise dans smallmenu.selection==1
 // soit par extinction des leds (marche avec OS 5.2)
 // soit comme sur la CX si l'ecriture en flash NAND marche un jour
+#ifdef SDL_KHICAS
+#include <emscripten.h>
+extern "C" void console_log(const char * s){
+  EM_ASM({
+      var value = UTF8ToString($0);
+      console.log(value);
+    },s);
+}  
+#else
+extern "C" void console_log(const char *){}
+#endif
 
-#ifdef KHICAS
+
+
+#if defined KHICAS || defined SDL_KHICAS
 #include "qrcodegen.h"
 
 #ifdef NUMWORKS
+#if !defined NUMWORKS_SLOTB // || defined SDL_KHICAS || defined SIMU
+#define QRHELP
+#endif
+
 #if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
 extern "C" void sync_screen();//{}
 #endif
 
 char * freeptr=0;
 #ifndef DEVICE
-const char * flash_buf=file_gettar_aligned("apps.tar",freeptr);
+#ifdef __APPLE__
+#include <sys/stat.h>
+#endif
+const char * flash_filename(){
+#ifdef __APPLE__
+  static string s="";
+  char ptr[256]={0};
+  if (getcwd(ptr,256)){
+    s=ptr;
+    if (s=="/"){
+      if (getenv("HOME")){
+        s=getenv("HOME");
+        string s1 = s+"/Library/Application\ Support/Upsilon/";
+        mkdir(s1.c_str(),0755); // ignore error if dir exists
+        if (giac::is_file_available((s1+"scripts.tar").c_str()))
+          s=s1;
+        else
+          s+="/Documents/";
+      }
+    }
+    if (s.size()==0 || s[s.size()-1]!='/')
+      s += '/';
+    s+="scripts.tar";
+    cout << "User flash filename " << s << "\n";
+    return s.c_str();
+  }
+#endif
+  return "scripts.tar";
+}
+const char * flash_buf=file_gettar_aligned(flash_filename(),freeptr);
 extern "C" const char * flash_read(const char * filename){
   return tar_loadfile(flash_buf,filename,0);
 }
@@ -74,9 +125,12 @@ extern "C" int flash_filebrowser(const char ** filenames,int maxrecords,const ch
 #else
 const char * flash_buf=(const char *)0x90200000;
 #endif
-#endif
 
-#if defined NUMWORKS && !defined DEVICE //ndef NSPIRE_NEWLIB
+#else // NUMWORKS
+#define QRHELP
+#endif // NUMWORKS
+
+#if defined NUMWORKS && !defined DEVICE && !defined KHICAS && !defined SDL_KHICAS //ndef NSPIRE_NEWLIB
 extern "C" {
   short int nspire_exam_mode=0;
 }
@@ -91,6 +145,8 @@ const int xwaspy_shift=33; // must be between 32 and 63, reflect in xcas.js and 
 #include <ctype.h>
 #include "input_lexer.h"
 #include "input_parser.h"
+  
+
 #if defined NUMWORKS && defined DEVICE
   void py_ck_ctrl_c(){
     if (giac::ctrl_c || giac::interrupted)
@@ -98,6 +154,11 @@ const int xwaspy_shift=33; // must be between 32 and 63, reflect in xcas.js and 
   }
 #else
   void py_ck_ctrl_c(){}
+#endif
+
+#ifdef SDL_KHICAS
+#define COLOR_BLACK 0
+#define COLOR_WHITE 65535
 #endif
 
 //giac::context * contextptr=0;
@@ -120,6 +181,7 @@ bool xthetat=false;
 #ifdef BW
 bool freezeturtle=false;
 #endif
+bool nws_freezeturtle=false;
 bool global_show_axes=true;
 int esc_flag=0;
 int xcas_python_eval=0;
@@ -219,10 +281,12 @@ int get_free_memory(){
 }
 #endif
 
-#if defined NUMWORKS // || (defined NSPIRE_NEWLIB && !defined BW) 
+#if defined NUMWORKS  // || (defined NSPIRE_NEWLIB && !defined BW)
+#if !defined SDL_KHICAS
   int GetSetupSetting(int mode){
     return 0;
   }
+#endif
 
   void SetSetupSetting(int mode,int){
   }
@@ -343,7 +407,7 @@ namespace giac {
       ptr=new string;
     return ptr;
   }
-  
+
   void copy_clipboard(const string & s,bool status){
     dbgprintf("clip %s\n",s.c_str());
 #if defined NUMWORKS && defined DEVICE && !defined NUMWORKS_SLOTB && !defined NUMWORKS_SLOTAB
@@ -471,12 +535,12 @@ namespace giac {
     return strlen(s); // FIXME for UTF8
   }
 
-  void PrintXY(int x,int y,const char * s,int mode,int c=giac::_BLACK,int bg=giac::_WHITE){
+  void PrintXY(int x,int y,const char * s,int mode,int c=SDK_BLACK,int bg=SDK_WHITE){
     if (mode==TEXT_MODE_NORMAL)
       os_draw_string(x,y,c,bg,s);
     else {
 #ifndef HP39
-      if (c==giac::_BLACK && bg==giac::_WHITE)
+      if (c==SDK_BLACK && bg==SDK_WHITE)
 	os_draw_string(x,y,c,color_gris,s);
       else
 #endif
@@ -484,31 +548,44 @@ namespace giac {
     }
   }
 
-  int PrintMiniMini(int x,int y,const char * s,int mode,int c=giac::_BLACK,int bg=giac::_WHITE,bool fake=false){
+  int PrintMiniMini(int x,int y,const char * s,int mode,int c=SDK_BLACK,int bg=SDK_WHITE,bool fake=false){
+#ifdef SDL_KHICAS
+    // console_log(("printminimini "+string(s)+" "+print_INT_(x)+","+print_INT_(y)+" mode="+print_INT_(mode)+" c="+print_INT_(c)+" bg="+print_INT_(bg)+(fake?"fake":"")).c_str());
+    if (mode==TEXT_MODE_NORMAL)
+      return numworks_draw_string_small(x,y,c,bg,s,fake);
+    else 
+      return numworks_draw_string_small(x,y,bg,c,s,fake);
+#else
     if (mode==TEXT_MODE_NORMAL)
       return os_draw_string_small(x,y,c,bg,s,fake);
     else {
 #ifndef HP39      
-      if (c==giac::_BLACK && bg==giac::_WHITE)
+      if (c==SDK_BLACK && bg==SDK_WHITE)
 	return os_draw_string_small(x,y,c,color_gris,s,fake);
       else
 #endif
 	return os_draw_string_small(x,y,bg,c,s,fake);	
     }
+#endif
   }
 
   
-  int PrintMini(int x,int y,const char * s,int mode,int c=giac::_BLACK,int bg=giac::_WHITE,bool fake=false){
+  int PrintMini7(int x,int y,const char * s,int mode,int c,int bg,bool fake){
+    //console_log(("printmini7 "+string(s)+" "+print_INT_(x)+","+print_INT_(y)+" mode="+print_INT_(mode)+" c="+print_INT_(c)+" bg="+print_INT_(bg)+(fake?"fake":"")).c_str());
     if (mode==TEXT_MODE_NORMAL)
       return os_draw_string_medium(x,y,c,bg,s,fake);
     else {
 #ifndef HP39
-      if (c==giac::_BLACK && bg==giac::_WHITE)
+      if (c==SDK_BLACK && bg==SDK_WHITE)
         return os_draw_string_medium(x,y,c,color_gris,s,fake);
       else
 #endif
         return os_draw_string_medium(x,y,bg,c,s,fake);
     }
+  }
+  
+  int PrintMini(int x,int y,const char * s,int mode){
+    return PrintMini7(x,y,s,mode,SDK_BLACK,SDK_WHITE,false);
   }
 
 #ifndef BW
@@ -600,7 +677,7 @@ namespace giac {
                 int textY = curitem*C24+itemsStartY*C24-menu->scroll*C24-C24+C10;
                 clearLine(menu->startX, curitem+itemsStartY-menu->scroll, (menu->selection == curitem+1 ? textColorToFullColor(menu->items[curitem].color) : COLOR_WHITE));
                 drawLine(textX, textY+C24-4, LCD_WIDTH_PX-2, textY+C24-4, COLOR_GRAY);
-                PrintMini(&textX, &textY, (unsigned char*)menuitem, 0, 0xFFFFFFFF, 0, 0, (menu->selection == curitem+1 ? COLOR_WHITE : textColorToFullColor(menu->items[curitem].color)), (menu->selection == curitem+1 ? textColorToFullColor(menu->items[curitem].color) : COLOR_WHITE), 1, 0);*/
+                PrintMini7(&textX, &textY, (unsigned char*)menuitem, 0, 0xFFFFFFFF, 0, 0, (menu->selection == curitem+1 ? COLOR_WHITE : textColorToFullColor(menu->items[curitem].color)), (menu->selection == curitem+1 ? textColorToFullColor(menu->items[curitem].color) : COLOR_WHITE), 1, 0);*/
             }
             // deal with menu items of type MENUITEM_CHECKBOX
             if(menu->items[curitem].type == MENUITEM_CHECKBOX) {
@@ -779,7 +856,7 @@ namespace giac {
       case KEY_CTRL_F3:
       case KEY_CTRL_F4:
       case KEY_CTRL_F5:
-      case KEY_CTRL_F6: case KEY_CTRL_CATALOG: case KEY_BOOK: case '\t':
+      case KEY_CTRL_F6: case KEY_CTRL_CATALOG: case KEY_BOOK: case '\t': case KEY_CHAR_EXPN10: case KEY_CTRL_SETUP:
       case KEY_CHAR_ANS: 
 	if (menu->type == MENUTYPE_FKEYS || menu->type==MENUTYPE_NO_NUMBER || menu->type==MENUTYPE_MULTISELECT) return key; // MULTISELECT also returns on Fkeys
 	break;
@@ -973,15 +1050,21 @@ namespace giac {
     {"%", "%", "a % b signifie a modulo b", 0, 0, CAT_CATEGORY_ARIT | (CAT_CATEGORY_PROGCMD << 8)},
     {"&", "&", "Et logique ou +", "#1&2", 0, CAT_CATEGORY_PROGCMD},
     {":=", ":=", "Affectation vers la gauche (inverse de =>).", "#a:=3", 0, CAT_CATEGORY_PROGCMD|(CAT_CATEGORY_SOFUS<<8)|XCAS_ONLY},
+#ifdef QRHELP    
     {"<", "<", "Inferieur strict. Raccourci SHIFT F2", 0, 0, CAT_CATEGORY_PROGCMD},
+#endif
     {"=>", "=>", "Affectation vers la droite ou conversion en (touche ->). Par exemple 5=>a ou x^4-1=>* ou (x+1)^2=>+ ou sin(x)^2=>cos.", "#5=>a", "#15_m=>_cm", CAT_CATEGORY_PROGCMD | (CAT_CATEGORY_PHYS <<8) | (CAT_CATEGORY_UNIT << 16) | XCAS_ONLY},
+#ifdef QRHELP
     {">", ">", "Superieur strict. Raccourci F2.", 0, 0, CAT_CATEGORY_PROGCMD},
     {"\\", "\\", "Caractere \\", 0, 0, CAT_CATEGORY_PROGCMD},
+#endif
     {"_", "_", "Caractere _. Prefixe d'unites.", 0, 0, CAT_CATEGORY_PROGCMD},
     {"_(km/h)", "_(km/h)", "Vitesse en kilometre/heure", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_(m/s)", "_(m/s)", "Vitesse en metre/seconde", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
+#ifdef QRHELP
     {"_(m/s^2)", "_(m/s^2)", "Acceleration en metre par seconde au carre", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_(m^2/s)", "_(m^2/s)", "Viscosite", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
+#endif
     {"_A", 0, "Intensite electrique en Ampere", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_Bq", 0, "Radioactivite: Becquerel", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_C", 0, "Charge electrique en Coulomb", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
@@ -1015,7 +1098,9 @@ namespace giac {
     {"_alpha_", 0, "constante de structure fine", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_c_", 0, "vitesse de la lumiere", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_cd", 0, "Luminosite en candela", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
+#ifndef NUMWORKS_SLOTB
     {"_cdf", "_cdf", "Suffixe de distribution cumulee. Taper F2 pour la distribution cumulee inverse.", "#_icdf", 0, CAT_CATEGORY_PROBA|XCAS_ONLY},
+#endif
     {"_d", 0, "Temps: jour", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_deg", 0, "Angle en degres", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_eV", 0, "Energie en electron-Volt", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
@@ -1043,7 +1128,9 @@ namespace giac {
     {"_mpme_", 0, "ratio de masse proton/electron", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_mu0_", 0, "permeabilite du vide", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_phi_", 0, "quantum flux magnetique", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
+#ifndef NUMWORKS_SLOTB
     {"_plot", "_plot", "Suffixe pour graphe d'une regression.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];polynomial_regression_plot(X,Y,2);scatterplot(X,Y)", 0, CAT_CATEGORY_STATS| XCAS_ONLY},
+#endif
     {"_qe_", 0, "charge de l'electron", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_qme_", 0, "_q_/_me_", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_rad", 0, "Angle en radians", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
@@ -1127,7 +1214,7 @@ namespace giac {
     {"egcd(A,B)", 0, "Cherche des polynomes U,V,D tels que A*U+B*V=D=gcd(A,B)","x^2+3x+1,x^2-5x-1", 0, CAT_CATEGORY_POLYNOMIAL | XCAS_ONLY},
     {"eigenvals(A)", 0, "Valeurs propres de la matrice A.", "[[1,2],[3,4]]", 0, CAT_CATEGORY_MATRIX | XCAS_ONLY},
     {"eigenvects(A)", 0, "Vecteurs propres de la matrice A.", "[[1,2],[3,4]]", 0, CAT_CATEGORY_MATRIX},
-    {"elif (test)", "elif", "Tests en cascade", 0, 0, CAT_CATEGORY_PROG | XCAS_ONLY},
+    //{"elif (test)", "elif", "Tests en cascade", 0, 0, CAT_CATEGORY_PROG | XCAS_ONLY},
 				     //{"end", "end", "Fin de bloc", 0, 0, CAT_CATEGORY_PROG},
     {"ellipse(F1,F2,M)", 0, "Ellipse donnee par les 2 foyers et un point", "-1,1,2", 0, CAT_CATEGORY_2D},
     {"equation(objet)", 0, "Equation cartesienne. Utiliser parameq pour parametrique.", "circle(0,1)", "ellipse(-1,1,3)", CAT_CATEGORY_2D | (CAT_CATEGORY_3D << 8) },
@@ -1138,8 +1225,10 @@ namespace giac {
     {"evalc(z)", 0, "Ecrit z=x+i*y.", "1/(1+i*sqrt(3))", 0, CAT_CATEGORY_COMPLEXNUM | XCAS_ONLY},
     {"exact(x)", 0, "Convertit x en rationnel. Raccourci shift S-D", "1.2", 0, CAT_CATEGORY_REAL | XCAS_ONLY},
     {"exp2trig(expr)", 0, "Conversion d'exponentielles complexes en sin/cos", "exp(i*x)", 0, CAT_CATEGORY_TRIG | XCAS_ONLY},
+#ifdef QRHELP
     {"exponential_regression(Xlist,Ylist)", 0, "Regression exponentielle.", "[1,2,3,4,5],[0,1,3,4,4]", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
     {"exponential_regression_plot(Xlist,Ylist)", 0, "Graphe d'une regression exponentielle.", "#X,Y:=[1,2,3,4,5],[1,3,4,6,8];exponential_regression_plot(X,Y);", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
+#endif
     {"exponentiald(lambda,x)", 0, "Loi exponentielle de parametre lambda. exponentiald_cdf(lambda,x) probabilite que \"loi exponentielle <=x\" par ex. exponentiald_cdf(2,3). exponentiald_icdf(lambda,t) renvoie x tel que \"loi exponentielle <=x\" vaut t, par ex. exponentiald_icdf(2,0.95) ", "5.1,3.4", 0, CAT_CATEGORY_PROBA | XCAS_ONLY},
     {"extend", 0, "Concatene 2 listes. Attention en Xcas, ne pas utiliser + qui effectue l'addition de 2 vecteurs.","#l1.extend(l2)", 0, CAT_CATEGORY_LIST},
     {"factor(p,[x])", 0, "Factorisation du polynome p (utiliser ifactor pour un entier). Raccourci: p=>*", "x^4-1", "x^6+1,sqrt(3)", CAT_CATEGORY_ALGEBRA | (CAT_CATEGORY_POLYNOMIAL << 8) | XCAS_ONLY},
@@ -1148,6 +1237,7 @@ namespace giac {
     {"floor(x)", 0, "Partie entiere de x", "pi", 0, CAT_CATEGORY_REAL},
     {"fonction f(x)", "fonction", "Definition de fonction (Xcas). Par exemple\nfonction f(x)\n local y;\ny:=x*x;\nreturn y;\nffonction", 0, 0, CAT_CATEGORY_PROG | XCAS_ONLY},
     {"frenet([x(t),y(t)],t,t0)", 0, "Courbure, centre de courbure et repere de Frenet de la courbe parametree [x(t),y(t)] en t0", "[t,t^2],t,1", "[t,t^2],t", CAT_CATEGORY_CALCULUS | (CAT_CATEGORY_2D << 8) | XCAS_ONLY},
+#ifndef NUMWORKS_SLOTB
     {"from arit import *", "from arit import *", "Instruction pour utiliser les fonctions d'arithmetique entiere en Python", "#from arit import *", "#import arit", CAT_CATEGORY_ARIT},
     {"from cas import *", "from cas import *", "Permet d'utiliser le calcul formel depuis Python", "#from cas import *", "#import cas", CAT_CATEGORY_ALGEBRA|(CAT_CATEGORY_CALCULUS<<8)},
     {"from cmath import *", "from cmath import *", "Instruction pour utiliser les fonctions de maths sur les complexes (trigo, exponentielle, log, ...) en Python", "#from cmath import *;i=1j", "#import cmath", CAT_CATEGORY_COMPLEXNUM},
@@ -1157,6 +1247,7 @@ namespace giac {
     {"from matplotl import *", "from matplotl import *", "Instruction pour utiliser les fonctions de trace en Python", "#from matplotl import *", "#import matplotl", CAT_CATEGORY_PROBA|(CAT_CATEGORY_PLOT <<8)|(CAT_CATEGORY_STATS<<16)},
     {"from random import *", "from random import *", "Instruction pour utiliser les fonctions aleatoires en Python", "#from random import *", "#import random", CAT_CATEGORY_PROBA},
     {"from turtle import *", "from turtle import *", "Instruction pour utiliser la tortue en Python", "#from turtle import *", "#import turtle", CAT_CATEGORY_LOGO},
+#endif
     {"fsolve(equation,x=a[..b])", 0, "Resolution approchee de equation pour x dans l'intervalle a..b ou en partant de x=a.","cos(x)=x,x=0..1", "cos(x)-x,x=0.0", CAT_CATEGORY_SOLVE | XCAS_ONLY},
     {"gauss(q)", 0, "Reduction de Gauss d'une forme quadratique q", "x^2+x*y+x*z,[x,y,z]", "x^2+4*x*y,[]", CAT_CATEGORY_LINALG | XCAS_ONLY },
     {"gcd(a,b,...)", 0, "Plus grand commun diviseur. En Python ne fonctionne qu'avec des entiers. Voir iegcd ou egcd pour Bezout.", "23,13", "x^2-1,x^3-1", CAT_CATEGORY_ARIT | (CAT_CATEGORY_POLYNOMIAL << 8)},
@@ -1182,7 +1273,7 @@ namespace giac {
     {"inscrit(A,B,C)", 0, "Cercle inscrit", "-1,2+i,3", 0, CAT_CATEGORY_PROGCMD | (CAT_CATEGORY_2D << 8) | XCAS_ONLY},
     {"inf", "inf", "Plus l'infini. Utiliser -inf pour moins l'infini ou infinity pour l'infini complexe. Raccourci shift INS.", "-inf", "infinity", CAT_CATEGORY_CALCULUS | XCAS_ONLY},
     {"input()", "input()", "Lire une chaine au clavier", "\"Valeur ?\"", 0, CAT_CATEGORY_PROG},
-    {"integrate(f,x,[,a,b])", 0, "Primitive de f par rapport a la variable x, par ex. integrate(x*sin(x),x). Pour calculer une integrale definie, entrer les arguments optionnels a et b, par ex. integrate(x*sin(x),x,0,pi). Raccourci SHIFT F3.", "x*sin(x),x", "cos(x)/(1+x^4),x,0,inf", CAT_CATEGORY_CALCULUS | XCAS_ONLY},
+    {"integrate(f,x,[,a,b])", 0, "Primitive de f par rapport a la variable x, par ex. integrate(x*sin(x),x). Pour calculer une integrale definie, entrer les arguments optionnels a et b, par ex. integrate(x*sin(x),x,0,pi).  Pour une integrale curviligne, integrate([champ_x,champ_y],[x,y],courbe,tmin,tmax), par ex. aire ellipse G:=plotparam([2*cos(t),sin(t)],t):; integrate([0,x],[x,y],G,0,2*pi). Raccourci SHIFT F3.", "x*sin(x),x", "cos(x)/(1+x^4),x,0,inf", CAT_CATEGORY_CALCULUS | XCAS_ONLY},
     {"interp(X,Y[,interp])", 0, "Interpolation de Lagrange aux points (xi,yi) avec X la liste des xi et Y des yi. Renvoie la liste des differences divisees si interp est passe en parametre.", "[1,2,3,4,5],[0,1,3,4,4]", "[1,2,3,4,5],[0,1,3,4,4],interp", CAT_CATEGORY_POLYNOMIAL | XCAS_ONLY},
     {"inter(A,B)", 0, "Liste des intersections. Utiliser single_inter si l'intersection est unique.", "line(y=x),circle(0,1)", 0, CAT_CATEGORY_3D | (CAT_CATEGORY_2D << 8) | XCAS_ONLY},
     {"inter_unique(A,B)", 0, "Premiere intersection. Utiliser inter pour une liste d'intersections.", "line(y=x),line(x+y=3)", 0, CAT_CATEGORY_3D | (CAT_CATEGORY_2D << 8) | XCAS_ONLY},
@@ -1214,7 +1305,7 @@ namespace giac {
     {"linetan(expr,x,x0)", 0, "Tangente au graphe en x=x0.", "sin(x),x,pi/2", 0, CAT_CATEGORY_PLOT | XCAS_ONLY},
     {"linsolve([eq1,eq2,..],[x,y,..])", 0, "Resolution de systeme lineaire. Peut utiliser le resultat de lu pour resolution en O(n^2).","[x+y=1,x-y=2],[x,y]", "#p,l,u:=lu([[1,2],[3,4]]); linsolve(p,l,u,[5,6])", CAT_CATEGORY_SOLVE | (CAT_CATEGORY_LINALG <<8) | (CAT_CATEGORY_MATRIX << 16) | XCAS_ONLY},
     {"logarithmic_regression(Xlist,Ylist)", 0, "Regression logarithmique.", "[1,2,3,4,5],[0,1,3,4,4]", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
-    {"logarithmic_regression_plot(Xlist,Ylist)", 0, "Graphe d'une regression logarithmique.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];logarithmic_regression_plot(X,Y);", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
+    //{"logarithmic_regression_plot(Xlist,Ylist)", 0, "Graphe d'une regression logarithmique.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];logarithmic_regression_plot(X,Y);", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
     {"lu(A)", 0, "decomposition LU de la matrice A, P*A=L*U, renvoie P permutation, L et U triangulaires inferieure et superieure", "[[1,2],[3,4]]", 0, CAT_CATEGORY_MATRIX | XCAS_ONLY},
     {"magenta", "magenta", "Option d'affichage", "#display=magenta", 0, CAT_CATEGORY_PROGCMD},
     {"map(f,l)", 0, "Applique f aux elements de la liste l.","lambda x:x*x,[1,2,3]", 0, CAT_CATEGORY_LIST},
@@ -1249,18 +1340,20 @@ namespace giac {
     {"plotlist(list)", 0, "Graphe d'une liste", "[3/2,2,1,1/2,3,2,3/2]", "[1,13],[2,10],[3,15],[4,16]", CAT_CATEGORY_PLOT | XCAS_ONLY},
     {"plotode(f(t,y), [t=tmin..tmax,y],[t0,y0])", 0, "Graphe de solution d'equation differentielle y'=f(t,y), y(t0)=y0.", "sin(t*y),[t=-3..3,y],[0,1]", 0, CAT_CATEGORY_PLOT | XCAS_ONLY},
     {"plotparam([x,y],t)", 0, "Graphe en parametriques. Par exemple plotparam([sin(3t),cos(2t)],t,0,pi) ou plotparam(exp(i*t),t,0,pi)", "[sin(3t),cos(2t)],t,0,pi", "[t^2,t^3],t=-1..1,tstep=0.1", CAT_CATEGORY_PLOT | (CAT_CATEGORY_3D << 8) | XCAS_ONLY},
-    {"plotpolar(r,theta)", 0, "Graphe en polaire.","cos(3*x),x,0,pi", "1/(1+cos(x)),x=0..pi,xstep=0.05", CAT_CATEGORY_PLOT | XCAS_ONLY},
+    {"plotpolar(r,theta)", 0, "Graphe en polaire.","cos(3*x),x,0,pi", "1/(1+cos(x)),x=0..pi,tstep=0.05", CAT_CATEGORY_PLOT | XCAS_ONLY},
     {"plotseq(f(x),x=[u0,m,M],n)", 0, "Trace f(x) sur [m,M] et n termes de la suite recurrente u_{n+1}=f(u_n) de 1er terme u0.","sqrt(2+x),x=[6,0,7],5", 0, CAT_CATEGORY_PLOT | XCAS_ONLY},
     {"plus_point", "plus_point", "Option d'affichage", "#display=blue+plus_point", 0, CAT_CATEGORY_PROGCMD  | XCAS_ONLY},
     {"point(x,y[,z])", 0, "Point", "1,2", "1,2,3", CAT_CATEGORY_PLOT | (CAT_CATEGORY_2D << 8) |  (CAT_CATEGORY_3D << 16) | XCAS_ONLY},
     {"polygone(list)", 0, "Polygone ferme donne par la liste de ses sommets.", "1-i,2+i,3,3-2i", 0, CAT_CATEGORY_PROGCMD | (CAT_CATEGORY_2D << 8) | XCAS_ONLY},
     {"polygonscatterplot(Xlist,Ylist)", 0, "Nuage de points relies.", "[1,2,3,4,5],[0,1,3,4,4]", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
     {"polyhedron(A,B,C,D,...)", 0, "Polyedre convexe dont les sommets sont parmi A,B,C,D,...", "[0,0,0],[0,5,0],[0,0,5],[1,2,6]", 0, CAT_CATEGORY_3D},
+#ifdef QRHELP
     {"polynomial_regression(Xlist,Ylist,n)", 0, "Regression polynomiale de degre <= n.", "[1,2,3,4,5],[0,1,3,4,4],2", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
     {"polynomial_regression_plot(Xlist,Ylist,n)", 0, "Graphe d'une regression polynomiale de degre <= n.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];polynomial_regression_plot(X,Y,2);scatterplot(X,Y);", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
     {"pour (boucle Xcas)", "pour  de  to  faire  fpour;", "Boucle definie.","#pour j de 1 to 10 faire print(j,j^2); fpour;", 0, CAT_CATEGORY_PROG | XCAS_ONLY},
     {"power_regression(Xlist,Ylist,n)", 0, "Regression puissance.", "[1,2,3,4,5],[0,1,3,4,4]", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
     {"power_regression_plot(Xlist,Ylist,n)", 0, "Graphe d'une regression puissance.", "#X,Y:=[1,2,3,4,5],[1,1,3,4,4];power_regression_plot(X,Y);", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
+#endif
     {"pow(a,n,p)", 0, "Renvoie a^n mod p","123,456,789", 0, CAT_CATEGORY_ARIT},
     {"powmod(a,n,p[,P,x])", 0, "Renvoie a^n mod p, ou a^n mod un entier p et un polynome P en x.","123,456,789", "x+1,452,19,x^4+x+1,x", CAT_CATEGORY_ARIT | XCAS_ONLY},
     {"print(expr)", 0, "Afficher dans la console", 0, 0, CAT_CATEGORY_PROG},
@@ -1314,7 +1407,9 @@ namespace giac {
     {"similitude(centre,rapport,angle,objet)", 0, "Image de l'objet par similitude", "0,2,pi/2,circle(1,1)", 0, CAT_CATEGORY_2D },
     {"simplify(expr)", 0, "Renvoie en general expr sous forme simplifiee. Raccourci expr=>/", "sin(3x)/sin(x)", "ln(4)-ln(2)", CAT_CATEGORY_ALGEBRA | XCAS_ONLY},
     {"sin_regression(Xlist,Ylist)", 0, "Regression trigonometrique.", "[1,2,3,4,5,6,7,8,9,10,11,12,13,14],[0.1,0.5,0.8,1,0.7,0.5,0.05,-.5,-.75,-1,-.7,-.4,0.1,.5]", 0, CAT_CATEGORY_STATS | XCAS_ONLY},
+#ifdef QRHELP
     {"sin_regression_plot(Xlist,Ylist)", 0, "Graphe d'une regression trigonometrique.", "#X,Y:=[1,2,3,4,5,6,7,8,9,10,11,12,13,14],[0.1,0.5,0.8,1,0.7,0.5,0.05,-.5,-.75,-1,-.7,-.4,0.1,.5];sin_regression_plot(X,Y);", 0, CAT_CATEGORY_STATS  | XCAS_ONLY},
+#endif
     {"solve()", 0, "Xcas: solve(equation,x) resolution exacte d'une equation en x (ou d'un systeme polynomial). Utiliser csolve pour les solutions complexes, linsolve pour un systeme lineaire. Python et Xcas: solve(A,b) resolution d'un systeme de Cramer A*x=b", "x^2-x-1=0,x", "[x^2-y^2=0,x^2-z^2=0],[x,y,z]", CAT_CATEGORY_SOLVE},
     {"sommets(objet)", 0, "Liste des sommets d'un polygone ou polyedre", "triangle(1,i,2)", "cube([0,0,0],[1,0,0],[0,1,0])", CAT_CATEGORY_2D | (CAT_CATEGORY_3D << 8) },
     {"sorted(l)", 0, "Trie une liste.","[3/2,2,1,1/2,3,2,3/2]", "[[1,2],[2,3],[4,3]],(x,y)->when(x[1]==y[1],x[0]>y[0],x[1]>y[1]", CAT_CATEGORY_LIST},
@@ -1383,15 +1478,21 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
   {"%", "%", "a % b means a modulo b", 0, 0, CAT_CATEGORY_ARIT | (CAT_CATEGORY_PROGCMD << 8)},
   {"&", "&", "Logical and or +", "#1&2", 0, CAT_CATEGORY_PROGCMD},
   {":=", ":=", "Set variable value. Shortcut SHIFT F1", "#a:=3", 0, CAT_CATEGORY_PROGCMD|(CAT_CATEGORY_SOFUS<<8)|XCAS_ONLY},
+#ifdef QRHELP
   {"<", "<", "Shortcut SHIFT F2", 0, 0, CAT_CATEGORY_PROGCMD},
+#endif
   {"=>", "=>", "Store value in variable or conversion (touche ->). For example 5=>a or x^4-1=>* or (x+1)^2=>+ or sin(x)^2=>cos.", "#5=>a", "#15_ft=>_cm", CAT_CATEGORY_PROGCMD | (CAT_CATEGORY_PHYS <<8) | (CAT_CATEGORY_UNIT << 16) | XCAS_ONLY},
+#ifdef QRHELP
   {">", ">", "Shortcut F2.", 0, 0, CAT_CATEGORY_PROGCMD},
   {"\\", "\\", "\\ char", 0, 0, CAT_CATEGORY_PROGCMD},
   {"_", "_", "_ char, shortcut (-).", 0, 0, CAT_CATEGORY_PROGCMD},
+#endif
     {"_(km/h)", "_(km/h)", "Speed kilometer per hour", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_(m/s)", "_(m/s)", "Speed meter/second", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
+#ifdef QRHELP
     {"_(m/s^2)", "_(m/s^2)", "Acceleration", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_(m^2/s)", "_(m^2/s)", "Viscosity", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
+#endif
     {"_A", 0, "Ampere", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_Bq", 0, "Becquerel", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_C", 0, "Coulomb", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
@@ -1425,7 +1526,9 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
     {"_alpha_", 0, "fine structure constant", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_c_", 0, "speed of light", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_cd", 0, "candela", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
+#ifndef NUMWORKS_SLOTB
   {"_cdf", "_cdf", "Suffix to get a cumulative distribution function. Type F2 for inverse cumulative distribution function _icdf suffix.", "#_icdf", 0, CAT_CATEGORY_PROBA|XCAS_ONLY},
+#endif
     {"_d", 0, "day", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_deg", 0, "degree", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_eV", 0, "electron-Volt", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
@@ -1453,14 +1556,16 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
     {"_mpme_", 0, "proton/electron mass-ratio", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_mu0_", 0, "", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_phi_", 0, "magnetic flux quantum", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
+#ifndef NUMWORKS_SLOTB
     {"_plot", "_plot", "Suffix for a regression graph.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];polynomial_regression_plot(X,Y,2);scatterplot(X,Y)", 0, CAT_CATEGORY_STATS},
+#endif
     {"_qe_", 0, "electron charge", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_qme_", 0, "_q_/_me_", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_rad", 0, "radians", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_rem", 0, "rem", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_s", 0, "second", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_sd_", 0, "Sideral day", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
-    {"_syr_", 0, "Siderale year", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
+    {"_syr_", 0, "Sideral year", 0, 0, CAT_CATEGORY_PHYS | XCAS_ONLY},
     {"_tr", 0, "tour (angle unit)", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
     {"_yd", 0, "yards", 0, 0, CAT_CATEGORY_UNIT | XCAS_ONLY},
   {"a and b", " and ", "Logical and", 0, 0, CAT_CATEGORY_PROGCMD},
@@ -1533,7 +1638,7 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 #endif
   {"efface", "efface", "Reset turtle", 0, 0, CAT_CATEGORY_LOGO},
   {"egcd(A,B)", 0, "Find polynomials U,V,D such that A*U+B*V=D=gcd(A,B)","x^2+3x+1,x^2-5x-1", 0, CAT_CATEGORY_POLYNOMIAL},
-  {"elif test", "elif ", "Test cascade", 0, 0, CAT_CATEGORY_PROG},
+  //{"elif test", "elif ", "Test cascade", 0, 0, CAT_CATEGORY_PROG},
   {"ellipse(F1,F2,M)", 0, "Ellipse given by 2 focus and one point", "-1,1,2", 0, CAT_CATEGORY_2D},
   {"eigenvals(A)", 0, "Eigenvalues of matrix  A.", "[[1,2],[3,4]]", 0, CAT_CATEGORY_MATRIX |XCAS_ONLY},
   {"eigenvects(A)", 0, "Eigenvectors of matrix A.", "[[1,2],[3,4]]", 0, CAT_CATEGORY_MATRIX},
@@ -1545,8 +1650,10 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
   {"evalc(z)", 0, "Write z=x+i*y.", "1/(1+i*sqrt(3))", 0, CAT_CATEGORY_COMPLEXNUM},
   {"exact(x)", 0, "Converts x to a rational. Shortcut shift S-D", "1.2", 0, CAT_CATEGORY_REAL},
   {"exp2trig(expr)", 0, "Convert complex exponentials to sin/cos", "exp(i*x)", 0, CAT_CATEGORY_TRIG},
+#ifdef QRHELP
   {"exponential_regression(Xlist,Ylist)", 0, "Exponential regression.", "[1,2,3,4,5],[0,1,3,4,4]", 0, CAT_CATEGORY_STATS},
   {"exponential_regression_plot(Xlist,Ylist)", 0, "Exponential regression plot.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];exponential_regression_plot(X,Y);scatterplot(X,Y)", 0, CAT_CATEGORY_STATS},
+#endif
   {"exponentiald(lambda,x)", 0, "Exponential distribution law of  parameter lambda. exponentiald_cdf(lambda,x) probability that \"exponential distribution <=x\" e.g. exponentiald_cdf(2,3). exponentiald_icdf(lambda,t) returns x such that \"exponential distribution <=x\" has probability t, e.g, exponentiald_icdf(2,0.95) ", "5.1,3.4", 0, CAT_CATEGORY_PROBA},
   {"extend", 0, "Merge 2 lists. Note that + does not merge lists, it adds vectors","#l1.extend(l2)", 0, CAT_CATEGORY_LIST},
   {"factor(p,[x])", 0, "Factors polynomial p (run ifactor for an integer). Shortcut: p=>*", "x^4-1", "x^6+1,sqrt(3)", CAT_CATEGORY_ALGEBRA| (CAT_CATEGORY_POLYNOMIAL << 8)},
@@ -1556,7 +1663,9 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
   {"fourier_an(f,x,T,n,a)", 0, "Cosine Fourier coefficients of f", "x^2,x,2*pi,n,-pi", 0, CAT_CATEGORY_CALCULUS},
   {"fourier_bn(f,x,T,n,a)", 0, "Sine Fourier coefficients of f", "x^2,x,2*pi,n,-pi", 0, CAT_CATEGORY_CALCULUS},
   {"fourier_cn(f,x,T,n,a)", 0, "Exponential Fourier coefficients of f", "x^2,x,2*pi,n,-pi", 0, CAT_CATEGORY_CALCULUS},
+#ifndef NUMWORKS_SLOTB
   {"from math/... import *", "from math import *", "Access to math or to random functions ([random]) or turtle with English commandnames [turtle]. Math import is not required in KhiCAS", "#from random import *", "#from turtle import *", CAT_CATEGORY_PROG},
+#endif
   {"fsolve(equation,x=a..b)", 0, "Approx equation solving in interval a..b.","cos(x)=x,x=0..1", "cos(x)-x,x=0.0", CAT_CATEGORY_SOLVE},
   // {"function f(x):...", "function f(x) local y;   ffunction:;", "Function definition.", "#function f(x) local y; y:=x^2; return y; ffunction:;", 0, CAT_CATEGORY_PROG},
   {"gauss(q)", 0, "Quadratic form reduction", "x^2+x*y+x*z+y^2+z^2,[x,y,z]", 0, CAT_CATEGORY_LINALG},
@@ -1583,7 +1692,7 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
   {"incircle(A,B,C)", 0, "Incircle", "-1,2+i,3", 0, CAT_CATEGORY_PROGCMD | (CAT_CATEGORY_2D << 8) | XCAS_ONLY},
   {"inf", "inf", "Plus infinity. -inf for minus infinity and infinity for unsigned/complex infinity. Shortcut shift INS.", "oo", 0, CAT_CATEGORY_CALCULUS},
   {"input()", "input()", "Read a string from keyboard", 0, 0, CAT_CATEGORY_PROG},
-  {"integrate(f,x,[a,b])", 0, "Antiderivative of f with respect to x, like integrate(x*sin(x),x). For definite integral enter optional arguments a and b, like integrate(x*sin(x),x,0,pi). Shortcut SHIFT F3.", "x*sin(x),x", "cos(x)/(1+x^4),x,0,inf", CAT_CATEGORY_CALCULUS},
+  {"integrate(f,x,[a,b])", 0, "Antiderivative of f with respect to x, like integrate(x*sin(x),x). For definite integral enter optional arguments a and b, like integrate(x*sin(x),x,0,pi). For line integral, integrate([field_x,field_y],[x,y],courbe,tmin,tmax), e.g.. ellipse area G:=plotparam([2*cos(t),sin(t)],t):; integrate([0,x],[x,y],G,0,2*pi). Shortcut SHIFT F3.", "x*sin(x),x", "cos(x)/(1+x^4),x,0,inf", CAT_CATEGORY_CALCULUS},
   {"interp(X,Y)", 0, "Lagrange interpolation at points (xi,yi) where X is the list of xi and Y of yi. If interp is passed as 3rd argument, returns the divided differences list.", "[1,2,3,4,5],[0,1,3,4,4]", "[1,2,3,4,5],[0,1,3,4,4],interp", CAT_CATEGORY_POLYNOMIAL},
   {"inter(A,B)", 0, "Intersections list. Run single_inter if intersection is unique.", "line(y=x),circle(0,1)", 0, CAT_CATEGORY_3D | (CAT_CATEGORY_2D << 8) | XCAS_ONLY},
   {"inv(A)", 0, "Inverse of A.", "[[1,2],[3,4]]", 0, CAT_CATEGORY_MATRIX},
@@ -1613,7 +1722,7 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
   {"linetan(expr,x,x0)", 0, "Tangent to the graph at x=x0.", "sin(x),x,pi/2", 0, CAT_CATEGORY_PLOT},
   {"linsolve([eq1,eq2,..],[x,y,..])", 0, "Linear system solving. May use the output of lu for O(n^2) solving (see example 2).","[x+y=1,x-y=2],[x,y]", "#p,l,u:=lu([[1,2],[3,4]]); linsolve(p,l,u,[5,6])", CAT_CATEGORY_SOLVE | (CAT_CATEGORY_LINALG <<8) | (CAT_CATEGORY_MATRIX << 16)},
   {"logarithmic_regression(Xlist,Ylist)", 0, "Logarithmic egression.", "[1,2,3,4,5],[0,1,3,4,4]", 0, CAT_CATEGORY_STATS},
-  {"logarithmic_regression_plot(Xlist,Ylist)", 0, "Logarithmic regression plot.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];logarithmic_regression_plot(X,Y);scatterplot(X,Y)", 0, CAT_CATEGORY_STATS},
+  //{"logarithmic_regression_plot(Xlist,Ylist)", 0, "Logarithmic regression plot.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];logarithmic_regression_plot(X,Y);scatterplot(X,Y)", 0, CAT_CATEGORY_STATS},
   {"lu(A)", 0, "LU decomposition LU of matrix A, P*A=L*U", "[[1,2],[3,4]]", 0, CAT_CATEGORY_MATRIX},
   {"magenta", "magenta", "Display option", "#display=magenta", 0, CAT_CATEGORY_PROGCMD},
   {"map(f,l)", 0, "Maps f on element of list l.","lambda x:x*x,[1,2,3]", 0, CAT_CATEGORY_LIST},
@@ -1654,11 +1763,13 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
   {"polygon(list)", 0, "Closed polygon given by a list of vertices.", "1-i,2+i,3,3-2i", 0, CAT_CATEGORY_PROGCMD | (CAT_CATEGORY_2D << 8) },
   {"polygonscatterplot(Xlist,Ylist)", 0, "Plot points and polygonal line.", "[1,2,3,4,5],[0,1,3,4,4]", 0, CAT_CATEGORY_STATS},
   {"polyhedron(A,B,C,D,...)", 0, "Convex polyhedron of vertices in A,B,C,D,...", "[0,0,0],[0,5,0],[0,0,5],[1,2,6]", 0, CAT_CATEGORY_3D},
+#ifdef QRHELP  
   {"polynomial_regression(Xlist,Ylist,n)", 0, "Polynomial regression, degree <= n.", "[1,2,3,4,5],[0,1,3,4,4],2", 0, CAT_CATEGORY_STATS},
   {"polynomial_regression_plot(Xlist,Ylist,n)", 0, "Polynomial regression plot, degree <= n.", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];polynomial_regression_plot(X,Y,2);scatterplot(X,Y)", 0, CAT_CATEGORY_STATS},
   //{"pour", "pour j de 1 jusque  faire  fpour;", "For loop.","#pour j de 1 jusque 10 faire print(j,j^2); fpour;", 0, CAT_CATEGORY_PROG},
   {"power_regression(Xlist,Ylist,n)", 0, "Power regression.", "[1,2,3,4,5],[0,1,3,4,4]", 0, CAT_CATEGORY_STATS},
   {"power_regression_plot(Xlist,Ylist,n)", 0, "Power regression graph", "#X,Y:=[1,2,3,4,5],[0,1,3,4,4];power_regression_plot(X,Y);scatterplot(X,Y)", 0, CAT_CATEGORY_STATS},
+#endif
   {"powmod(a,n,p)", 0, "Returns a^n mod p.","123,456,789", 0, CAT_CATEGORY_ARIT},
   {"print(expr)", 0, "Print expr in console", 0, 0, CAT_CATEGORY_PROG},
   {"projection(obj1,obj2)", 0, "Projection on obj1 of obj2", "line(y=x),point(2,3)", 0, CAT_CATEGORY_2D },
@@ -1748,8 +1859,12 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 
   const char aide_khicas_string[]="Aide Khicas";
 #ifdef NUMWORKS
+#ifdef NUMWORKS_SLOTB
+  const char shortcuts_en_string[]="";
+#else
   const char shortcuts_fr_string[]="Raccourcis clavier (shell et editeur)\nshift-/: %\nalpha shift \": '\nshift--: \\\nshift-+: completion\nshift-1 a 6: selon bandeau en bas\nshift-7: matrices\nshift-8: complexes\nshift-9:arithmetique entiere\nshift-0: probas\nshift-.: reels\nshift-10^: polynomes\nvar: liste des variables\nans: figure tortue (editeur)\n\nshift-x^y (sto) renvoie =>\n=>+: partfrac\n=>*: factor\n=>sin/cos/tan\n=>=>: solve\n\nShell:\nshift-5: Editeur 2d ou graphique ou texte selon objet\nshift-6: editeur texte\n+ ou - modifie un parametre en surbrillance\n\nEditeur d'expressions\nshift-cut: defaire/refaire (1 fois)\npave directionnel: deplace la selection dans l'arborescence de l'expression\nshift-droit/gauche echange selection avec argument a droite ou a gauche\nalpha-droit/gauche dans une somme ou un produit: augmente la selection avec argument droit ou gauche\nshift-4: Editer selection, shift-5: taille police + ou - grande\nEXE: evaluer la selection\nshift-6: valeur approchee\nBackspace: supprime l'operateur racine de la selection\n\nEditeur de scripts\nEXE: passage a la ligne\nshift-CUT: documentation\nshift COPY (ou shift et deplacement curseur simultanement): marque le debut de la selection, deplacer le curseur vers la fin puis Backspace pour effacer ou shift-COPY pour copier sans effacer. shift-PASTE pour coller.\nHome-6 recherche seule: entrer un mot puis EXE puis EXE. Taper EXE pour l'occurence suivante, Back pour annuler.\nHome-6 remplacer: entrer un mot puis EXE puis le remplacement et EXE. Taper EXE ou Back pour remplacer ou non et passer a l'occurence suivante, AC pour annuler\nOK: tester syntaxe\n\nRaccourcis Graphes:\n+ - zoom\n(-): zoomout selon y\n*: autoscale\n/: orthonormalisation\nOPTN: axes on/off";
   const char shortcuts_en_string[]="Keyboard shortcuts (shell and editor)\nshift-/: %\nalpha shift \": '\nshift--: \\\nshift-+: completion\nshift-1 to 6: cf. screen bottom\nshift-7: matrices\nshift-8: complexes\nshift-9:arithmetic\nshift-0: proba\nshift-.: reals\nshift-10^: polynomials\nvar: variables list\nans: turtle screen (editor)\n\nshift-x^y (sto) returns =>\n=>+: partfrac\n=>*: factor\n=>sin/cos/tan\n=>=>: solve\n\nShell:\nshift-5: 2d editor or graph or text\nshift-6: text edit\n+ ou - modifies selected slider\n\nExpressions editor\nshift-cut: undo/redo (1 fois)\nkeypad: move selection inside expression tree\nshift-right/left exchange selection with right or left argument\nalpha-right/left: inside a sum or product: increase selection with right or left argument\nshift-4: Edit selection, shift-5: change fontsize\nEXE: eval selection\nshift-6: approx value\nBackspace: suppress selection's rootnode operator\n\nScript Editor\nEXE: newline\nshift-CUT: documentation\nshift-COPY: marks selection begin, move the cursor to the end, then hit Backspace to erase or shift-COPY to copy (no erase). shift-PASTE to paste.\nHome-6 search: enter a word then EXE then again EXE. Type EXE for next occurence, Back to cancel.\nHome-6 replace: enter a word then EXE then replacement word then EXE. Type EXE or Back to replace or ignore and go to next occurence, AC to cancel\nOK: test syntax\n\nGraph shortcuts:\n+ - zoom\n(-): zoomout along y\n*: autoscale\n/: orthonormalization\nOPTN: axes on/off";
+#endif
 #else
   const char shortcuts_fr_string[]="Raccourcis clavier (shell et editeur)\nlivre: aide/complete\ntab: complete (shell)/indente (editeur)\nshift-/: %\nshift *: '\nctrl-/: \\\nshift-1 a 6: selon bandeau en bas\nshift-7: matrices\nshift-8: complexes\nshift-9:arithmetique\nshift-0: probas\nshift-.: reels\nctrl P: programme\nvar: liste des variables\nans (shift (-)): figure tortue (editeur)\n\nctrl-var (sto) renvoie =>\n=>+: partfrac\n=>*: factor\n=>sin/cos/tan\n=>=>: solve\n\nShell:\nshift-5: Editeur 2d ou graphique ou texte selon objet\nshift-4: editeur texte\n+ ou - modifie un parametre en surbrillance\n\nEditeur d'expressions\nctrl z: defaire/refaire (1 fois)\npave directionnel: deplace la selection dans l'arborescence de l'expression\nshift-droit/gauche echange selection avec argument a droite ou a gauche\nctrl droit/gauche dans une somme ou un produit: augmente la selection avec argument droit ou gauche\nshift-4: Editer selection, shift-5: taille police + ou - grande\nenter: evaluer la selection\nshift-6: valeur approchee\nDel: supprime l'operateur racine de la selection\n\nEditeur de scripts\nenter: passage a la ligne\nctrl z: defaire/refaire (1 fois)\nctrl c ou shift et touche curseur simultanement: marque le debut de la selection, deplacer le curseur vers la fin puis Del pour effacer ou ctrl c pour copier sans effacer. ctrl v pour coller.\ndoc-6 recherche seule: entrer un mot puis enter puis enter. Taper enter pour l'occurence suivante, esc pour annuler.\ndoc-6 remplacer: entrer un mot puis enter puis le remplacement et enter. Taper enter ou esc pour remplacer ou non et passer a l'occurence suivante, ctrl del pour annuler\nvalidation (a droite de U): tester syntaxe\n\nRaccourcis Graphes:\n+ - zoom\n(-): zoomout selon y\n*: autoscale\n/: orthonormalisation\nOPTN: axes on/off";
   const char shortcuts_en_string[]="Keyboard shortcuts (shell and editor)\nbook: help or completion\ntab: completion (shell), indent (editor)\nshift-/: %\nalpha shift *: '\nctrl-/: \\\nshift-1 a 6: see at bottom\nshift-7: matrices\nshift-8: complexes\nshift-9:arithmetic\nshift-0: probas\nshift-.: reals\nctrl P: program\nvar: variables list\n ans (shift (-)): turtle screen (editor)\n\nctrl var (sto) returns =>\n=>+: partfrac\n=>*: factor\n=>sin/cos/tan\n=>=>: solve\n\nShell:\nshift-5: 2d editor or graph or text\nshift-4: text edit\n+ ou - modifies selected slider\n\nExpressions editor\nctrl z: undo/redo (1 fois)\nkeypad: move selection inside expression tree\nshift-right/left exchange selection with right or left argument\nalpha-right/left: inside a sum or product: increase selection with right or left argument\nshift-4: Edit selection, shift-5: change fontsize\nenter: eval selection\nshift-6: approx value\nDel: suppress selection's rootnode operator\n\nScript Editor\nenter: newline\nctrl z: undo/redo (1 time)\nctrl c or shift + cursor key simultaneously: marks selection begin, move the cursor to the end, then hit Del to erase or ctrl c to copy (no erase). ctrl v to paste.\ndoc-6 search: enter a word then enter then again enter. Type enter for next occurence, esc to cancel.\ndoc-6 replace: enter a word then enter then replacement word then enter. Type enter or esc to replace or ignore and go to next occurence, AC to cancel\nOK: test syntax\n\nGraph shortcuts:\n+ - zoom\n(-): zoomout along y\n*: autoscale\n/: orthonormalization\nOPTN: axes on/off";
@@ -1894,6 +2009,2594 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
     return r;
   }
 
+#if 0 // def NUMWORKS
+#define MENUITEM_MALLOC
+#endif
+
+#ifdef QRHELP
+string longhelp(const char * s);
+
+struct charptrint {
+  const char * s;
+  int i;
+};
+
+const charptrint helpen[]={
+  {"Airy_Ai",227},
+  {"Airy_Bi",227},
+  {"Beta",224},
+  {"Binary",240},
+  {"BlockDiagonal",491},
+  {"CST",71},
+  {"Celsius2Fahrenheit",760},
+  {"Circle",857},
+  {"ClrDraw",797},
+  {"ClrGraph",797},
+  {"ClrIO",776},
+  {"Colors",609},
+  {"CopyVar",68},
+  {"DIGITS",24},
+  {"DelFold",78},
+  {"DelVar",70},
+  {"Delete",240},
+  {"Det",424},
+  {"Digits",24},
+  {"Dirac",218},
+  {"Disp",776},
+  {"DispG",40},
+  {"DispHome",797},
+  {"DrawParm",-1},
+  {"DrawPol",632},
+  {"DrawSlp",620},
+  {"DrwCtour",625},
+  {"ERROR",790},
+  {"Euclidean",875},
+  {"FALSE",79},
+  {"Factor",423},
+  {"Fahrenheit2Celsius",760},
+  {"Fourier",715},
+  {"Gamma",221},
+  {"Gcd",171},
+  {"GetFold",78},
+  {"Hamming",102},
+  {"Heaviside",217},
+  {"Heaviside2sign",291},
+  {"IFTE",81},
+  {"Input",772},
+  {"InputStr",772},
+  {"Int",450},
+  {"Inverse",425},
+  {"JordanBlock",491},
+  {"LSQ",584},
+  {"LaTeX",38},
+  {"LateX",40},
+  {"Levensthein",101},
+  {"Line",831},
+  {"LineHorz",616},
+  {"LineTan",618},
+  {"LineVert",617},
+  {"NewFold",78},
+  {"Nullspace",529},
+  {"Output",772},
+  {"Ox_2d_unit_vector",805},
+  {"Ox_3d_unit_vector",922},
+  {"Oy_2d_unit_vector",805},
+  {"Oy_3d_unit_vector",922},
+  {"Oz_3d_unit_vector",922},
+  {"Pause",798},
+  {"Postfix",240},
+  {"Prefix",240},
+  {"Psi",225},
+  {"Quo",361},
+  {"REDIM",495},
+  {"REPLACE",495},
+  {"RandSeed",664},
+  {"Rem",362},
+  {"Rref",426},
+  {"SCALE",506},
+  {"SCALEADD",506},
+  {"SCHUR",544},
+  {"SVL",554},
+  {"SetFold",78},
+  {"SortA",137},
+  {"SortD",138},
+  {"Store",63},
+  {"TRUE",79},
+  {"Taxicab",740},
+  {"UTPC",678},
+  {"UTPF",679},
+  {"UTPN",676},
+  {"UTPT",677},
+  {"Unary",240},
+  {"VARS",70},
+  {"VAS",373},
+  {"VAS_positive",374},
+  {"WAIT",798},
+  {"Zeta",226},
+  {"a2q",568},
+  {"abcuv",368},
+  {"about",69},
+  {"abs",231},
+  {"abscissa",867},
+  {"accumulate_head_tail",650},
+  {"acos",245},
+  {"acos2asin",302},
+  {"acos2atan",303},
+  {"acosh",245},
+  {"acot",245},
+  {"acsc",245},
+  {"add",143},
+  {"additionally",69},
+  {"addtable",716},
+  {"adjoint_matrix",542},
+  {"affix",866},
+  {"algsubs",266},
+  {"algvar",281},
+  {"altitude",837},
+  {"and",69},
+  {"angle",877},
+  {"angle_radian",26},
+  {"angleat",874},
+  {"angleatraw",874},
+  {"animate",637},
+  {"animate3d",638},
+  {"animation",639},
+  {"ans",49},
+  {"append",129},
+  {"apply",495},
+  {"approx",746},
+  {"approx_mode",27},
+  {"arc",856},
+  {"arcLen",457},
+  {"arccos",245},
+  {"arccosh",245},
+  {"archive",67},
+  {"arcsin",245},
+  {"arcsinh",245},
+  {"arctan",245},
+  {"arctanh",245},
+  {"area",623},
+  {"areaat",874},
+  {"areaatraw",874},
+  {"areaplot",624},
+  {"arg",231},
+  {"args",791},
+  {"as_function_of",248},
+  {"asc",94},
+  {"asec",245},
+  {"asin",245},
+  {"asin2acos",304},
+  {"asin2atan",305},
+  {"asinh",245},
+  {"assert",774},
+  {"assign",63},
+  {"assume",69},
+  {"atan",245},
+  {"atan2acos",307},
+  {"atan2asin",306},
+  {"atanh",245},
+  {"atrig2ln",317},
+  {"augment",131},
+  {"auto_correlation",708},
+  {"autosimplify",288},
+  {"bar_plot",653},
+  {"barplot",653},
+  {"bartlett_hann_window",724},
+  {"barycenter",235},
+  {"basis",526},
+  {"batons",656},
+  {"bernoulli",207},
+  {"betad",681},
+  {"betad_cdf",681},
+  {"betad_icdf",681},
+  {"bezier",631},
+  {"binary",105},
+  {"binomial",428},
+  {"binomial_cdf",672},
+  {"binomial_icdf",672},
+  {"bisector",839},
+  {"bit_depth",1023},
+  {"bitand",103},
+  {"bitor",103},
+  {"bitxor",103},
+  {"blackman_harris_window",725},
+  {"blackman_window",726},
+  {"blockmatrix",492},
+  {"bohman_window",727},
+  {"border",492},
+  {"box_constraints",170},
+  {"boxcar",701},
+  {"boxplot",647},
+  {"boxwhisker",517},
+  {"breakpoint",799},
+  {"bspline",603},
+  {"bvpsolve",755},
+  {"c1oc2",439},
+  {"c1op2",439},
+  {"cFactor",28},
+  {"cSolve",277},
+  {"camembert",654},
+  {"canonical_form",257},
+  {"cas_setup",33},
+  {"cat",97},
+  {"cauchy",683},
+  {"cauchy_cdf",683},
+  {"cauchy_icdf",683},
+  {"cauchyd",683},
+  {"cauchyd_cdf",683},
+  {"cauchyd_icdf",683},
+  {"cdf",689},
+  {"ceil",245},
+  {"ceiling",245},
+  {"center",825},
+  {"center2interval",161},
+  {"centered_cube",1004},
+  {"centered_tetrahedron",1003},
+  {"cfactor",28},
+  {"cfsolve",750},
+  {"changebase",525},
+  {"channel_data",1015},
+  {"channels",1023},
+  {"charpoly",539},
+  {"chinrem",369},
+  {"chisquare",678},
+  {"chisquare_cdf",678},
+  {"chisquare_icdf",678},
+  {"chisquaret",698},
+  {"cholesky",548},
+  {"chrem",190},
+  {"circle",855},
+  {"circumcircle",859},
+  {"classes",648},
+  {"cluster",740},
+  {"coeff",338},
+  {"coeffs",338},
+  {"col",494},
+  {"colDim",513},
+  {"colNorm",563},
+  {"colSwap",506},
+  {"coldim",513},
+  {"collect",349},
+  {"colnorm",563},
+  {"color",812},
+  {"colormap",609},
+  {"colspace",530},
+  {"colswap",506},
+  {"comDenom",395},
+  {"comb",428},
+  {"combine",331},
+  {"comment",48},
+  {"comments",48},
+  {"common_perpendicular",937},
+  {"companion",543},
+  {"compare",775},
+  {"complex_mode",28},
+  {"complex_variables",29},
+  {"complexroot",378},
+  {"concat",92},
+  {"cone",989},
+  {"conic",572},
+  {"conj",233},
+  {"conjugate_equation",480},
+  {"conjugate_gradient",570},
+  {"cont",799},
+  {"contains",154},
+  {"content",347},
+  {"contfrac",295},
+  {"contourplot",625},
+  {"convert",106},
+  {"convertir",106},
+  {"convex",475},
+  {"convexhull",854},
+  {"convolution",709},
+  {"coordinates",869},
+  {"copy",65},
+  {"correlation",655},
+  {"cos",245},
+  {"cos2sintan",311},
+  {"cosh",245},
+  {"cosine_window",728},
+  {"cot",245},
+  {"cote",960},
+  {"count",144},
+  {"count_eq",140},
+  {"count_inf",141},
+  {"count_sup",142},
+  {"courbe_polaire",632},
+  {"covariance",655},
+  {"covariance_correlation",655},
+  {"cpartfrac",397},
+  {"crationalroot",379},
+  {"createwav",1018},
+  {"cross",489},
+  {"crossP",489},
+  {"cross_correlation",707},
+  {"cross_ratio",912},
+  {"crossproduct",489},
+  {"csc",245},
+  {"cube",995},
+  {"cumSum",92},
+  {"cumulated_frequencies",652},
+  {"curl",472},
+  {"curvature",604},
+  {"cycle2perm",435},
+  {"cycleinv",442},
+  {"cycles2permu",434},
+  {"cyclotomic",370},
+  {"cylinder",991},
+  {"dayofweek",198},
+  {"deSolve",458},
+  {"debug",799},
+  {"degree",339},
+  {"degrees",877},
+  {"del",70},
+  {"delcols",495},
+  {"delrows",495},
+  {"deltalist",150},
+  {"denom",202},
+  {"densityplot",626},
+  {"derive",446},
+  {"deriver",446},
+  {"desolve",458},
+  {"det",415},
+  {"det_minor",522},
+  {"dfc",205},
+  {"dfc2f",206},
+  {"diag",491},
+  {"diff",446},
+  {"dim",511},
+  {"directories",-1},
+  {"display",608},
+  {"distance",875},
+  {"distance2",876},
+  {"distanceat",874},
+  {"distanceatraw",874},
+  {"div",178},
+  {"divergence",471},
+  {"divide",363},
+  {"divis",360},
+  {"division_point",911},
+  {"divisors",177},
+  {"divpc",461},
+  {"dodecahedron",1006},
+  {"domain",249},
+  {"dot",488},
+  {"dotP",488},
+  {"dot_paper",806},
+  {"dotprod",488},
+  {"droit",276},
+  {"dsolve",458},
+  {"duration",1023},
+  {"dwt",723},
+  {"e2r",336},
+  {"egcd",367},
+  {"egv",535},
+  {"egvl",534},
+  {"eigVc",535},
+  {"eigVl",534},
+  {"eigenvals",533},
+  {"eigenvalues",534},
+  {"eigenvectors",535},
+  {"eigenvects",535},
+  {"element",828},
+  {"eliminate",267},
+  {"ellipse",863},
+  {"emd",721},
+  {"envelope",918},
+  {"epsilon",278},
+  {"epsilon2zero",278},
+  {"equal",272},
+  {"equal2diff",273},
+  {"equal2list",274},
+  {"equation",872},
+  {"equilateral_triangle",844},
+  {"erase",803},
+  {"erf",219},
+  {"erfc",220},
+  {"error",790},
+  {"euler",194},
+  {"euler_gamma",56},
+  {"euler_lagrange",477},
+  {"eval",251},
+  {"eval_level",252},
+  {"evala",253},
+  {"evalb",85},
+  {"evalc",230},
+  {"evalf",69},
+  {"evalm",496},
+  {"even",181},
+  {"evolute",606},
+  {"exact",199},
+  {"exbisector",840},
+  {"excircle",860},
+  {"exp",245},
+  {"exp2list",83},
+  {"exp2pow",328},
+  {"exp2trig",308},
+  {"expand",256},
+  {"expexpand",322},
+  {"exponential",684},
+  {"exponential_cdf",684},
+  {"exponential_icdf",684},
+  {"exponential_regression",659},
+  {"exponential_regression_plot",659},
+  {"exponentiald",684},
+  {"exponentiald_cdf",684},
+  {"exponentiald_icdf",684},
+  {"export_mathml",44},
+  {"expr",100},
+  {"extract_measure",874},
+  {"extrema",591},
+  {"ezgcd",365},
+  {"f2nd",203},
+  {"fMax",590},
+  {"fMin",590},
+  {"fPart",245},
+  {"faces",1001},
+  {"factor",260},
+  {"factor_xn",346},
+  {"factorial",427},
+  {"factoriser",414},
+  {"factors",351},
+  {"fclose",74},
+  {"fcoeff",399},
+  {"fdistrib",256},
+  {"feuille",243},
+  {"fft",717},
+  {"fieldplot",635},
+  {"find_minimum",592},
+  {"findhelp",9},
+  {"fisher",679},
+  {"fisher_cdf",679},
+  {"fisher_icdf",679},
+  {"fisherd",679},
+  {"fitdistr",692},
+  {"fitpoly",601},
+  {"fitspline",603},
+  {"flatten",132},
+  {"float2rational",199},
+  {"floor",245},
+  {"foldl",149},
+  {"foldr",149},
+  {"fopen",74},
+  {"format",796},
+  {"fourier",715},
+  {"fourier_an",714},
+  {"fourier_bn",714},
+  {"fourier_cn",714},
+  {"fprint",74},
+  {"frac",245},
+  {"fracmod",412},
+  {"frame_2d",805},
+  {"frame_3d",922},
+  {"frank_wolfe",593},
+  {"frequences",651},
+  {"frequences_cumulees",652},
+  {"frequencies",651},
+  {"frobenius_norm",559},
+  {"froot",398},
+  {"fsolve",750},
+  {"funcplot",610},
+  {"function_diff",447},
+  {"fxnd",203},
+  {"gammad",680},
+  {"gammad_cdf",680},
+  {"gammad_icdf",680},
+  {"gauche",275},
+  {"gauss",569},
+  {"gauss_seidel_linsolve",583},
+  {"gaussian_window",729},
+  {"gaussquad",748},
+  {"gbasis",385},
+  {"gcd",171},
+  {"gcdex",367},
+  {"genpoly",388},
+  {"geometric",682},
+  {"geometric_cdf",682},
+  {"geometric_icdf",682},
+  {"getDenom",202},
+  {"getKey",773},
+  {"getNum",201},
+  {"getType",775},
+  {"giac",2},
+  {"grad",468},
+  {"gramschmidt",571},
+  {"graph2tex",40},
+  {"graph3d2tex",40},
+  {"graphe_suite",634},
+  {"greduce",386},
+  {"grid_paper",808},
+  {"groupermu",444},
+  {"hadamard",503},
+  {"half_cone",990},
+  {"half_line",830},
+  {"halftan",314},
+  {"halftan_hyp2exp",315},
+  {"halt",799},
+  {"hamdist",102},
+  {"hamming_window",730},
+  {"hann_poisson_window",731},
+  {"hann_window",732},
+  {"harmonic_conjugate",914},
+  {"harmonic_division",913},
+  {"has",282},
+  {"hasard",665},
+  {"head",89},
+  {"hermite",381},
+  {"hessenberg",544},
+  {"hessian",470},
+  {"heugcd",365},
+  {"hexadecimal",105},
+  {"hexagon",850},
+  {"hht",722},
+  {"highpass",711},
+  {"hilbert",491},
+  {"histogram",649},
+  {"histogramme",649},
+  {"hold",254},
+  {"homothety",890},
+  {"horner",344},
+  {"hsv",609},
+  {"hsv2rgb",609},
+  {"hyp2exp",321},
+  {"hyperbola",864},
+  {"iPart",245},
+  {"iabcuv",191},
+  {"ibasis",527},
+  {"ibpdv",454},
+  {"ibpu",454},
+  {"icas",2},
+  {"icdf",690},
+  {"ichinrem",190},
+  {"ichrem",190},
+  {"icomp",197},
+  {"icosahedron",1007},
+  {"identity",491},
+  {"idivis",177},
+  {"idn",491},
+  {"idwt",723},
+  {"iegcd",189},
+  {"ifactor",174},
+  {"ifactors",175},
+  {"ifft",717},
+  {"ifourier",715},
+  {"ifte",81},
+  {"igamma",223},
+  {"igcdex",189},
+  {"ihermite",545},
+  {"ilaplace",459},
+  {"imag",229},
+  {"image",528},
+  {"imfplot",721},
+  {"implicitdiff",448},
+  {"implicitplot",-1},
+  {"inString",96},
+  {"in_ideal",387},
+  {"incircle",858},
+  {"indets",279},
+  {"inequationplot",622},
+  {"inertia",557},
+  {"inf",56},
+  {"infinity",56},
+  {"input",772},
+  {"insert",128},
+  {"instfreq",720},
+  {"instphase",720},
+  {"int",450},
+  {"intDiv",178},
+  {"integer",69},
+  {"integrate",450},
+  {"inter",820},
+  {"interactive_odeplot",636},
+  {"interactive_plotode",636},
+  {"interp",598},
+  {"intersect",156},
+  {"interval2center",160},
+  {"inv",411},
+  {"inverse",411},
+  {"inversion",892},
+  {"invlaplace",459},
+  {"invztrans",467},
+  {"iquo",178},
+  {"iquorem",180},
+  {"iratrecon",412},
+  {"irem",179},
+  {"isPrime",184},
+  {"is_collinear",895},
+  {"is_concyclic",896},
+  {"is_conjugate",907},
+  {"is_coplanar",968},
+  {"is_cospherical",974},
+  {"is_cycle",438},
+  {"is_element",894},
+  {"is_equilateral",898},
+  {"is_harmonic",908},
+  {"is_harmonic_circle_bundle",910},
+  {"is_harmonic_line_bundle",909},
+  {"is_inside",897},
+  {"is_isosceles",899},
+  {"is_orthogonal",906},
+  {"is_parallel",904},
+  {"is_parallelogram",903},
+  {"is_permu",437},
+  {"is_perpendicular",905},
+  {"is_prime",184},
+  {"is_pseudoprime",183},
+  {"is_rectangle",900},
+  {"is_rhombus",902},
+  {"is_square",901},
+  {"isinf",57},
+  {"ismith",546},
+  {"isnan",57},
+  {"isobarycenter",824},
+  {"isolve",193},
+  {"isom",565},
+  {"isopolygon",851},
+  {"isosceles_triangle",842},
+  {"isposdef",532},
+  {"isprime",184},
+  {"istft",718},
+  {"ithprime",187},
+  {"jacobi_equation",479},
+  {"jacobi_linsolve",582},
+  {"jacobi_symbol",196},
+  {"join",92},
+  {"jordan",537},
+  {"kde",691},
+  {"ker",529},
+  {"kernel",529},
+  {"kernel_density",691},
+  {"kill",799},
+  {"kmeans",741},
+  {"kolmogorovd",686},
+  {"kolmogorovt",699},
+  {"kovacicsols",460},
+  {"l1norm",482},
+  {"l2norm",482},
+  {"labels",608},
+  {"lagrange",522},
+  {"laguerre",382},
+  {"laplace",459},
+  {"laplacian",469},
+  {"latex",38},
+  {"lcm",173},
+  {"lcoeff",341},
+  {"ldegree",340},
+  {"ldl",556},
+  {"left",89},
+  {"legend",812},
+  {"legendre",380},
+  {"legendre_symbol",195},
+  {"length",88},
+  {"levenshtein",101},
+  {"lgcd",172},
+  {"lhs",275},
+  {"ligne_polygonale",657},
+  {"limit",445},
+  {"lin",324},
+  {"linabs",294},
+  {"line",615},
+  {"line_inter",819},
+  {"line_paper",807},
+  {"line_segments",1002},
+  {"linear_interpolate",657},
+  {"linear_regression",658},
+  {"linear_regression_plot",658},
+  {"linfnorm",562},
+  {"linsolve",581},
+  {"linstep",292},
+  {"list2exp",84},
+  {"list2mat",151},
+  {"listplot",657},
+  {"lists",-1},
+  {"lll",558},
+  {"lname",279},
+  {"lncollect",325},
+  {"lnexpand",323},
+  {"locus",917},
+  {"log",245},
+  {"log10",245},
+  {"log2",245},
+  {"logarithmic_regression",660},
+  {"logarithmic_regression_plot",660},
+  {"logb",245},
+  {"logistic_regression",663},
+  {"logistic_regression_plot",663},
+  {"loi_normal",676},
+  {"lowpass",710},
+  {"lpsolve",588},
+  {"lsq",584},
+  {"lvar",280},
+  {"mRow",506},
+  {"mRowAdd",506},
+  {"make_symbol",794},
+  {"makelist",121},
+  {"makemat",493},
+  {"makesuite",116},
+  {"map",147},
+  {"maple2xcas",46},
+  {"maple_ifactors",176},
+  {"markov",693},
+  {"mat2list",152},
+  {"mathml",41},
+  {"matpow",538},
+  {"matrix",295},
+  {"matrix_norm",564},
+  {"max",245},
+  {"maximize",588},
+  {"maxnorm",482},
+  {"mean",517},
+  {"mean",517},
+  {"median",517},
+  {"median",517},
+  {"median_line",836},
+  {"member",154},
+  {"mgf",688},
+  {"mid",89},
+  {"midpoint",165},
+  {"min",245},
+  {"minimax",602},
+  {"minimize",590},
+  {"minus",157},
+  {"mixdown",-1},
+  {"mkisom",566},
+  {"mksa",758},
+  {"mod",179},
+  {"modgcd",365},
+  {"mods",179},
+  {"moving_average",712},
+  {"mul",146},
+  {"mult_c_conjugate",234},
+  {"mult_conjugate",258},
+  {"multinomial",674},
+  {"mustache",647},
+  {"nCr",428},
+  {"nDeriv",747},
+  {"nInt",748},
+  {"nPr",429},
+  {"nSolve",750},
+  {"ncols",513},
+  {"negbinomial",673},
+  {"negbinomial_cdf",673},
+  {"negbinomial_icdf",673},
+  {"neural_network",742},
+  {"newList",122},
+  {"newMat",491},
+  {"newton",749},
+  {"nextperm",432},
+  {"nextprime",185},
+  {"nlpsolve",595},
+  {"nodisp",47},
+  {"nop",116},
+  {"nops",109},
+  {"norm",482},
+  {"normal",286},
+  {"normal_cdf",676},
+  {"normal_icdf",676},
+  {"normald",676},
+  {"normald_cdf",676},
+  {"normald_icdf",676},
+  {"normalize",232},
+  {"normalt",696},
+  {"not",82},
+  {"nprimes",188},
+  {"nrows",512},
+  {"nuage_points",656},
+  {"nullspace",529},
+  {"numdiff",449},
+  {"numer",201},
+  {"octahedron",1005},
+  {"octal",105},
+  {"odd",182},
+  {"odeplot",633},
+  {"odesolve",753},
+  {"open_polygon",853},
+  {"ord",93},
+  {"order_size",462},
+  {"ordinate",868},
+  {"orthocenter",821},
+  {"orthogonal",936},
+  {"osculating_circle",605},
+  {"output",772},
+  {"p1oc2",439},
+  {"p1op2",439},
+  {"pa2b2",192},
+  {"pade",465},
+  {"parabola",865},
+  {"parallel",833},
+  {"parallelepiped",997},
+  {"parallelogram",848},
+  {"parameq",873},
+  {"paramplot",-1},
+  {"pari",208},
+  {"part",269},
+  {"partfrac",295},
+  {"parzen_window",733},
+  {"pcar",539},
+  {"pcar_hessenberg",540},
+  {"pcoef",354},
+  {"pcoeff",354},
+  {"perimeter",880},
+  {"perimeterat",874},
+  {"perimeteratraw",874},
+  {"period",271},
+  {"periodic",270},
+  {"perm",429},
+  {"perminv",441},
+  {"permu2cycles",433},
+  {"permu2mat",436},
+  {"permuorder",443},
+  {"perpen_bisector",838},
+  {"perpendicular",834},
+  {"peval",343},
+  {"piecewise",81},
+  {"pivot",580},
+  {"plane",938},
+  {"playsnd",1031},
+  {"plot",612},
+  {"plot3d",613},
+  {"plotarea",624},
+  {"plotcontour",625},
+  {"plotdensity",626},
+  {"plotfield",635},
+  {"plotfunc",610},
+  {"plotimf",721},
+  {"plotimplicit",-1},
+  {"plotinequation",622},
+  {"plotlist",657},
+  {"plotode",633},
+  {"plotparam",-1},
+  {"plotpolar",632},
+  {"plotseq",634},
+  {"plotspectrum",1030},
+  {"plotwav",1029},
+  {"pmin",237},
+  {"point",815},
+  {"point2d",817},
+  {"point3d",924},
+  {"point_polar",818},
+  {"poisson",675},
+  {"poisson_cdf",675},
+  {"poisson_icdf",675},
+  {"poisson_window",734},
+  {"polar",915},
+  {"polar_coordinates",871},
+  {"polar_point",818},
+  {"polarplot",632},
+  {"pole",915},
+  {"poly1",332},
+  {"poly2symb",335},
+  {"polyEval",343},
+  {"polygon",852},
+  {"polygonplot",657},
+  {"polyhedron",999},
+  {"polynomial_regression",662},
+  {"polynomial_regression_plot",662},
+  {"poslbdLMQ",376},
+  {"posubLMQ",375},
+  {"potential",473},
+  {"pow2exp",327},
+  {"power_regression",661},
+  {"power_regression_plot",661},
+  {"powermod",410},
+  {"powerpc",861},
+  {"powexpand",326},
+  {"powmod",410},
+  {"prepend",130},
+  {"preval",268},
+  {"prevperm",432},
+  {"prevprime",186},
+  {"primpart",348},
+  {"print",776},
+  {"printpow",777},
+  {"prism",998},
+  {"product",146},
+  {"program",768},
+  {"projection",893},
+  {"proot",752},
+  {"propFrac",200},
+  {"propfrac",200},
+  {"psrgcd",365},
+  {"ptayl",345},
+  {"purge",69},
+  {"pwd",77},
+  {"pyramid",996},
+  {"q2a",567},
+  {"quadric",574},
+  {"quadrilateral",849},
+  {"quantile",517},
+  {"quantile",646},
+  {"quantiles",517},
+  {"quartile1",645},
+  {"quartiles",517},
+  {"quartiles",517},
+  {"quest",49},
+  {"quo",361},
+  {"quorem",363},
+  {"quote",86},
+  {"r2e",335},
+  {"radians",877},
+  {"radical_axis",862},
+  {"radius",882},
+  {"rand",665},
+  {"randMat",669},
+  {"randNorm",666},
+  {"randPoly",358},
+  {"randbetad",666},
+  {"randbinomial",666},
+  {"randchisquare",666},
+  {"randexp",666},
+  {"randfisher",666},
+  {"randgammad",666},
+  {"randgeometric",666},
+  {"randint",665},
+  {"randmarkov",694},
+  {"randmatrix",669},
+  {"randmultinomial",666},
+  {"randnorm",666},
+  {"random",665},
+  {"random_variable",667},
+  {"randperm",431},
+  {"randpoisson",666},
+  {"randpoly",358},
+  {"randseed",664},
+  {"randstudent",666},
+  {"randvar",667},
+  {"randvector",668},
+  {"range",123},
+  {"rank",523},
+  {"ranm",359},
+  {"rat_jordan",536},
+  {"ratinterp",599},
+  {"rationalroot",377},
+  {"ratnormal",289},
+  {"rdiv",211},
+  {"read",75},
+  {"readrgb",1010},
+  {"readwav",1020},
+  {"real",229},
+  {"reciprocation",916},
+  {"rect",702},
+  {"rectangle",847},
+  {"rectangular_coordinates",870},
+  {"redim",495},
+  {"reduced_conic",573},
+  {"reduced_quadric",575},
+  {"ref",577},
+  {"reflection",888},
+  {"regroup",285},
+  {"rem",362},
+  {"remain",179},
+  {"remove",127},
+  {"reorder",357},
+  {"replace",495},
+  {"resample",1028},
+  {"residue",464},
+  {"resoudre",260},
+  {"restart",70},
+  {"resultant",372},
+  {"reverse",1019},
+  {"reverse_rsolve",585},
+  {"revert",463},
+  {"revlist",133},
+  {"rgb",609},
+  {"rgb2hsv",609},
+  {"rgb2xyz",609},
+  {"rhombus",846},
+  {"rhs",276},
+  {"riemann_window",735},
+  {"right",89},
+  {"right_triangle",843},
+  {"risch",451},
+  {"rm_a_z",70},
+  {"rm_all_vars",70},
+  {"rmbreakpoint",799},
+  {"rms",705},
+  {"rmwatch",799},
+  {"romberg",748},
+  {"root",212},
+  {"rootof",352},
+  {"roots",353},
+  {"rotate",134},
+  {"rotation",889},
+  {"round",245},
+  {"row",494},
+  {"rowAdd",506},
+  {"rowDim",512},
+  {"rowNorm",562},
+  {"rowSwap",506},
+  {"rowdim",512},
+  {"rownorm",562},
+  {"rowspace",531},
+  {"rowswap",506},
+  {"rref",417},
+  {"rsolve",118},
+  {"sample",665},
+  {"samplerate",1023},
+  {"scalarProduct",488},
+  {"scalar_product",488},
+  {"scale",506},
+  {"scaleadd",506},
+  {"scatterplot",656},
+  {"sec",245},
+  {"segment",831},
+  {"select",124},
+  {"semi_augment",492},
+  {"seq",108},
+  {"seqplot",634},
+  {"seqsolve",118},
+  {"series",462},
+  {"set_channel_data",1014},
+  {"shift",135},
+  {"shift_phase",298},
+  {"shuffle",431},
+  {"sign",245},
+  {"sign2Heaviside",291},
+  {"signature",440},
+  {"similarity",891},
+  {"simp2",204},
+  {"simplex_reduce",587},
+  {"simplify",287},
+  {"simplifyDirac",290},
+  {"simulated_annealing",596},
+  {"simult",579},
+  {"sin",245},
+  {"sin2costan",310},
+  {"sinc",704},
+  {"sincos",308},
+  {"single_inter",819},
+  {"sinh",245},
+  {"size",88},
+  {"sizes",120},
+  {"slope",881},
+  {"slopeat",874},
+  {"slopeatraw",874},
+  {"smith",547},
+  {"smod",179},
+  {"snedecor",679},
+  {"snedecor_cdf",679},
+  {"snedecor_icdf",679},
+  {"solve",260},
+  {"sommet",243},
+  {"sort",136},
+  {"sortperm",139},
+  {"soundsec",1024},
+  {"sphere",992},
+  {"splice",1034},
+  {"spline",598},
+  {"split",91},
+  {"spreadsheet",-1},
+  {"sqrfree",350},
+  {"sqrt",245},
+  {"square",845},
+  {"srand",664},
+  {"sst",799},
+  {"sst_in",799},
+  {"stdDev",643},
+  {"stddev",517},
+  {"stddevp",517},
+  {"stdev",642},
+  {"stereo2mono",1022},
+  {"stft",718},
+  {"sto",63},
+  {"string",295},
+  {"strip",90},
+  {"student",677},
+  {"student_cdf",677},
+  {"student_icdf",677},
+  {"studentd",677},
+  {"studentt",697},
+  {"sturm",371},
+  {"sturmab",371},
+  {"sturmseq",371},
+  {"subMat",494},
+  {"subexpression",51},
+  {"subexpressions",51},
+  {"subs",265},
+  {"subsop",126},
+  {"subst",263},
+  {"subtype",775},
+  {"sum",92},
+  {"sum_riemann",453},
+  {"supposons",69},
+  {"suppress",127},
+  {"surd",245},
+  {"svd",555},
+  {"svl",554},
+  {"swapcol",506},
+  {"swaprow",506},
+  {"switch_axes",804},
+  {"sylvester",372},
+  {"symb2poly",336},
+  {"symbol",766},
+  {"symbol_array",794},
+  {"syst2mat",576},
+  {"tCollect",299},
+  {"tExpand",330},
+  {"table",514},
+  {"tablefunc",117},
+  {"tableseq",119},
+  {"tabvar",250},
+  {"tail",89},
+  {"tan",245},
+  {"tan2cossin2",313},
+  {"tan2sincos",309},
+  {"tan2sincos2",312},
+  {"tangent",619},
+  {"tanh",245},
+  {"taylor",462},
+  {"tchebyshev1",383},
+  {"tchebyshev2",384},
+  {"tcoeff",342},
+  {"tcollect",299},
+  {"tetrahedron",996},
+  {"texpand",330},
+  {"textinput",772},
+  {"thiele",599},
+  {"threshold",713},
+  {"tlin",297},
+  {"tpsolve",589},
+  {"trace",521},
+  {"train",743},
+  {"tran",519},
+  {"translation",887},
+  {"transpose",519},
+  {"tri",703},
+  {"triangle",841},
+  {"triangle_paper",809},
+  {"triangle_window",736},
+  {"trig2exp",316},
+  {"trigcos",319},
+  {"trigexpand",296},
+  {"triginterp",600},
+  {"trigsimplify",301},
+  {"trigsin",318},
+  {"trigtan",320},
+  {"trim",90},
+  {"trn",524},
+  {"trunc",245},
+  {"truncate",355},
+  {"tsimplify",329},
+  {"tukey_window",737},
+  {"tuple",158},
+  {"type",775},
+  {"ufactor",761},
+  {"ugamma",222},
+  {"unapply",242},
+  {"unarchive",67},
+  {"uniform",671},
+  {"uniform_cdf",671},
+  {"uniform_icdf",671},
+  {"uniformd",671},
+  {"uniformd_cdf",671},
+  {"uniformd_icdf",671},
+  {"union",155},
+  {"unitV",232},
+  {"unquote",255},
+  {"user_operator",240},
+  {"usimplify",762},
+  {"valuation",340},
+  {"vandermonde",491},
+  {"variable",62},
+  {"variance",517},
+  {"vector",832},
+  {"vectors",-1},
+  {"version",5},
+  {"vertices",826},
+  {"vertices_abc",826},
+  {"vertices_abca",827},
+  {"vpotential",474},
+  {"watch",799},
+  {"weibull",685},
+  {"weibull_cdf",685},
+  {"weibull_icdf",685},
+  {"weibulld",685},
+  {"weibulld_cdf",685},
+  {"weibulld_icdf",685},
+  {"welch_window",738},
+  {"when",81},
+  {"widget_size",33},
+  {"wilcoxonp",687},
+  {"wilcoxons",687},
+  {"wilcoxont",687},
+  {"write",73},
+  {"writergb",1012},
+  {"writewav",1021},
+  {"wz_certificate",430},
+  {"xcas_mode",25},
+  {"xml_print",43},
+  {"xor",82},
+  {"xyz2rgb",609},
+  {"xyztrange",33},
+  {"zeros",261},
+  {"zip",148},
+  {"ztrans",466},
+};
+
+const int helpen_size=sizeof(helpen)/sizeof(charptrint);
+
+const charptrint helpfr[]={
+  {"Airy_Ai",227},
+  {"Airy_Bi",227},
+  {"Beta",224},
+  {"BlockDiagonal",563},
+  {"COND",641},
+  {"CST",64},
+  {"Celsius2Fahrenheit",130},
+  {"Ci",215},
+  {"Circle",949},
+  {"ClrDraw",59},
+  {"ClrGraph",59},
+  {"ClrIO",843},
+  {"CopyVar",69},
+  {"DIGITS",26},
+  {"DOM_COMPLEX",838},
+  {"DOM_FLOAT",838},
+  {"DOM_FUNC",838},
+  {"DOM_IDENT",838},
+  {"DOM_INT",838},
+  {"DOM_LIST",838},
+  {"DOM_RAT",838},
+  {"DOM_STRING",838},
+  {"DOM_SYMBOLIC",838},
+  {"DelFold",83},
+  {"DelVar",73},
+  {"Det",467},
+  {"Digits",26},
+  {"Dirac",218},
+  {"Disp",832},
+  {"DispG",832},
+  {"DispHome",832},
+  {"DrawFunc",-1},
+  {"DrawParm",-1},
+  {"DrawPol",-1},
+  {"DrawSlp",95},
+  {"DrwCtour",-1},
+  {"ERROR",885},
+  {"EXPR",840},
+  {"Edit",14},
+  {"Ei",213},
+  {"FALSE",136},
+  {"FUNC",840},
+  {"Factor",466},
+  {"Fahrenheit2Celsius",130},
+  {"GF",461},
+  {"Gamma",221},
+  {"Gcd",163},
+  {"GetFold",82},
+  {"Graph",-1},
+  {"Heaviside",217},
+  {"IFTE",65},
+  {"Input",835},
+  {"InputStr",835},
+  {"Int",308},
+  {"Inverse",468},
+  {"JordanBlock",565},
+  {"LIST",840},
+  {"LQ",662},
+  {"LSQ",700},
+  {"LU",664},
+  {"Li",214},
+  {"Line",920},
+  {"LineHorz",91},
+  {"LineTan",93},
+  {"LineVert",92},
+  {"M",14},
+  {"NUM",840},
+  {"NewFold",80},
+  {"Note_ind",2},
+  {"Nullspace",624},
+  {"Output",845},
+  {"Ox_2d_unit_vector",888},
+  {"Ox_3d_unit_vector",1018},
+  {"Oy_2d_unit_vector",888},
+  {"Oy_3d_unit_vector",1018},
+  {"Oz_3d_unit_vector",1018},
+  {"Pause",882},
+  {"Psi",225},
+  {"QR",661},
+  {"Quo",398},
+  {"REDIM",588},
+  {"REPLACE",589},
+  {"RandSeed",758},
+  {"Rem",400},
+  {"Rref",469},
+  {"SCALE",594},
+  {"SCALEADD",595},
+  {"SCHUR",653},
+  {"STR",840},
+  {"SVD",667},
+  {"SVL",665},
+  {"SetFold",81},
+  {"Si",216},
+  {"SortA",529},
+  {"SortD",530},
+  {"Store",850},
+  {"TRUE",136},
+  {"TeX",38},
+  {"UTPC",787},
+  {"UTPF",791},
+  {"UTPN",779},
+  {"UTPT",783},
+  {"VAR",840},
+  {"VARS",62},
+  {"VAS",436},
+  {"VAS_positive",437},
+  {"WAIT",883},
+  {"Zeta",226},
+  {"a2q",670},
+  {"abcuv",407},
+  {"about",72},
+  {"abs",981},
+  {"abscissa",959},
+  {"abscisse",959},
+  {"accumulate_head_tail",730},
+  {"acos",296},
+  {"acos2asin",327},
+  {"acos2atan",328},
+  {"acosh",296},
+  {"acot",321},
+  {"acsc",321},
+  {"add",539},
+  {"additionally",71},
+  {"adjoint_matrix",651},
+  {"affichage",-1},
+  {"afficher",842},
+  {"affix",958},
+  {"affixe",958},
+  {"aire",97},
+  {"aire_graphe",-1},
+  {"aireen",974},
+  {"aireenbrut",974},
+  {"alea",759},
+  {"algsubs",281},
+  {"algvar",709},
+  {"alog10",296},
+  {"alors",852},
+  {"altitude",926},
+  {"and",138},
+  {"angle",970},
+  {"angle_radian",28},
+  {"angleat",971},
+  {"angleatraw",971},
+  {"angleen",971},
+  {"angleenbrut",971},
+  {"animate",102},
+  {"animate3d",103},
+  {"animation",104},
+  {"ans",75},
+  {"append",526},
+  {"apply",542},
+  {"approx",-1},
+  {"approx_mode",29},
+  {"arc",947},
+  {"arcLen",314},
+  {"arccos",296},
+  {"arccosh",296},
+  {"archive",68},
+  {"arcsin",296},
+  {"arcsinh",296},
+  {"arctan",296},
+  {"arctanh",296},
+  {"area",97},
+  {"areaat",974},
+  {"areaatraw",974},
+  {"areaplot",-1},
+  {"aretes",1101},
+  {"arg",251},
+  {"args",867},
+  {"as_function_of",300},
+  {"asc",150},
+  {"asec",321},
+  {"asin",296},
+  {"asin2acos",329},
+  {"asin2atan",330},
+  {"asinh",296},
+  {"assert",837},
+  {"assign",851},
+  {"assume",70},
+  {"at",509},
+  {"atan",296},
+  {"atan2acos",332},
+  {"atan2asin",331},
+  {"atanh",296},
+  {"atrig2ln",341},
+  {"augment",525},
+  {"autosimplify",275},
+  {"axe_radical",954},
+  {"barycenter",911},
+  {"barycentre",911},
+  {"basis",620},
+  {"batons",741},
+  {"begin",-1},
+  {"bernoulli",206},
+  {"betad",795},
+  {"betad_cdf",796},
+  {"betad_icdf",797},
+  {"bezier",-1},
+  {"bezout_entier",183},
+  {"binomial",766},
+  {"binomial_cdf",767},
+  {"binomial_icdf",768},
+  {"birapport",1010},
+  {"bisector",928},
+  {"bissectrice",928},
+  {"bitand",141},
+  {"bitor",141},
+  {"bitxor",141},
+  {"blockmatrix",598},
+  {"border",601},
+  {"bounded_function",317},
+  {"boxwhisker",731},
+  {"break",868},
+  {"breakpoint",876},
+  {"c1oc2",240},
+  {"c1op2",238},
+  {"cFactor",269},
+  {"cSolve",691},
+  {"cZzeros",271},
+  {"camembert",736},
+  {"canonical_form",265},
+  {"carre",936},
+  {"cas_setup",25},
+  {"case",854},
+  {"cat",153},
+  {"catch",884},
+  {"cauchy",801},
+  {"cauchy_cdf",802},
+  {"cauchy_icdf",803},
+  {"cauchyd",801},
+  {"cauchyd_icdf",803},
+  {"cdf",819},
+  {"ceil",296},
+  {"ceiling",296},
+  {"center",912},
+  {"center2interval",480},
+  {"centered_cube",1103},
+  {"centered_tetrahedron",1102},
+  {"centre",912},
+  {"cercle",946},
+  {"cercle_osculateur",716},
+  {"cfactor",269},
+  {"cfsolve",-1},
+  {"changebase",619},
+  {"char",151},
+  {"charpoly",648},
+  {"chinrem",408},
+  {"chisquare",784},
+  {"chisquare_cdf",785},
+  {"chisquare_icdf",786},
+  {"chisquared",784},
+  {"chisquaret",826},
+  {"cholesky",659},
+  {"chrem",187},
+  {"circle",946},
+  {"circonscrit",951},
+  {"circumcircle",951},
+  {"classes",729},
+  {"coeff",369},
+  {"coeffs",369},
+  {"col",585},
+  {"colDim",609},
+  {"colNorm",639},
+  {"colSwap",597},
+  {"coldim",609},
+  {"collect",378},
+  {"colnorm",639},
+  {"color",-1},
+  {"colspace",625},
+  {"colswap",597},
+  {"comDenom",430},
+  {"comb",193},
+  {"combine",320},
+  {"comment",834},
+  {"common_perpendicular",1035},
+  {"companion",652},
+  {"compare",841},
+  {"complex",838},
+  {"complex_mode",30},
+  {"complex_variables",31},
+  {"complexroot",434},
+  {"concat",525},
+  {"cond",641},
+  {"cone",1088},
+  {"conic",674},
+  {"conique",674},
+  {"conique_reduite",675},
+  {"conj",253},
+  {"conj_harmonique",1012},
+  {"conjugate_gradient",672},
+  {"cont",878},
+  {"contains",534},
+  {"content",376},
+  {"continue",869},
+  {"contourplot",-1},
+  {"convert",491},
+  {"convertir",346},
+  {"convexhull",945},
+  {"coordinates",961},
+  {"coordonnees",961},
+  {"coordonnees_polaires",963},
+  {"coordonnees_rectangulaires",962},
+  {"copy",847},
+  {"correlation",738},
+  {"cos",321},
+  {"cos2sintan",336},
+  {"cosh",296},
+  {"cot",321},
+  {"cote",1059},
+  {"couleur",-1},
+  {"count",535},
+  {"count_eq",536},
+  {"count_inf",537},
+  {"count_sup",538},
+  {"courbe_parametrique",-1},
+  {"courbe_polaire",-1},
+  {"courbure",714},
+  {"covariance",737},
+  {"covariance_correlation",739},
+  {"cpartfrac",433},
+  {"cpp",1118},
+  {"crationalroot",441},
+  {"cross",559},
+  {"crossP",559},
+  {"cross_ratio",1010},
+  {"crossproduct",559},
+  {"csc",321},
+  {"csolve",691},
+  {"cube",1094},
+  {"cube_centre",1103},
+  {"cumSum",540},
+  {"cumulated_frequencies",734},
+  {"cur",111},
+  {"curl",682},
+  {"curvature",714},
+  {"cycle2perm",233},
+  {"cycleinv",243},
+  {"cycles2permu",232},
+  {"cyclotomic",409},
+  {"cylinder",1090},
+  {"cylindre",1090},
+  {"dayofweek",-1},
+  {"de",855},
+  {"deSolve",702},
+  {"debug",873},
+  {"def",830},
+  {"default",854},
+  {"degree",370},
+  {"del",73},
+  {"delcols",590},
+  {"delrows",590},
+  {"deltalist",549},
+  {"demi_cone",1089},
+  {"demi_droite",917},
+  {"denom",201},
+  {"densityplot",-1},
+  {"derive",307},
+  {"deriver",307},
+  {"desolve",702},
+  {"det",615},
+  {"det_minor",616},
+  {"developpee",-1},
+  {"developper",264},
+  {"developper_transcendant",319},
+  {"dfc",204},
+  {"dfc2f",205},
+  {"diag",563},
+  {"diagramme_batons",735},
+  {"diff",307},
+  {"dim",607},
+  {"display",-1},
+  {"distance",967},
+  {"distance2",969},
+  {"distanceat",968},
+  {"distanceatraw",968},
+  {"distanceen",968},
+  {"distanceenbrut",968},
+  {"div",170},
+  {"div_harmonique",1011},
+  {"divergence",681},
+  {"divide",401},
+  {"divis",396},
+  {"division_point",1009},
+  {"divisors",169},
+  {"divpc",470},
+  {"dodecaedre",1105},
+  {"dodecahedron",1105},
+  {"domain",302},
+  {"dot",558},
+  {"dotP",558},
+  {"dot_paper",891},
+  {"dotprod",558},
+  {"double",838},
+  {"droit",689},
+  {"droite",916},
+  {"droite_tangente",93},
+  {"dsolve",702},
+  {"e",-1},
+  {"e2r",366},
+  {"ecart_type",721},
+  {"ecart_type_population",722},
+  {"egcd",406},
+  {"egv",644},
+  {"egvl",643},
+  {"eigVc",644},
+  {"eigVl",643},
+  {"eigenvals",642},
+  {"eigenvalues",642},
+  {"eigenvectors",644},
+  {"eigenvects",644},
+  {"element",915},
+  {"elif",853},
+  {"eliminate",282},
+  {"ellipse",955},
+  {"else",852},
+  {"end",-1},
+  {"envelope",1016},
+  {"enveloppe",1016},
+  {"epaisseur",-1},
+  {"epsilon",706},
+  {"epsilon2zero",706},
+  {"equal",685},
+  {"equal2diff",686},
+  {"equal2list",687},
+  {"equation",964},
+  {"equilateral_triangle",934},
+  {"erase",886},
+  {"erf",219},
+  {"erfc",220},
+  {"error",885},
+  {"est_aligne",993},
+  {"est_carre",999},
+  {"est_cocyclique",994},
+  {"est_conjugue",1005},
+  {"est_coplanaire",1067},
+  {"est_cospherique",1073},
+  {"est_dans",995},
+  {"est_element",992},
+  {"est_equilateral",996},
+  {"est_faisceau_cercle",1008},
+  {"est_faisceau_droite",1007},
+  {"est_harmonique",1006},
+  {"est_impair",175},
+  {"est_inclus",500},
+  {"est_isocele",997},
+  {"est_losange",1000},
+  {"est_orthogonal",1004},
+  {"est_pair",174},
+  {"est_parallele",1002},
+  {"est_parallelogramme",1001},
+  {"est_perpendiculaire",1003},
+  {"est_rectangle",998},
+  {"euler",189},
+  {"euler_gamma",-1},
+  {"eval",259},
+  {"eval_level",260},
+  {"evala",261},
+  {"evalb",-1},
+  {"evalc",249},
+  {"evalf",-1},
+  {"evalm",573},
+  {"even",174},
+  {"evolute",-1},
+  {"exact",198},
+  {"exbisector",929},
+  {"exbissectrice",929},
+  {"excircle",952},
+  {"exinscrit",952},
+  {"exp",296},
+  {"exp2list",139},
+  {"exp2pow",360},
+  {"exp2trig",333},
+  {"expand",264},
+  {"expexpand",354},
+  {"exponential",807},
+  {"exponential_cdf",808},
+  {"exponential_icdf",809},
+  {"exponential_regression",748},
+  {"exponential_regression_plot",749},
+  {"exponentiald",807},
+  {"exponentiald_cdf",808},
+  {"exponentiald_icdf",809},
+  {"expr",158},
+  {"expression",838},
+  {"extend",525},
+  {"extract_measure",979},
+  {"extraire_mesure",979},
+  {"extrema",635},
+  {"ezgcd",404},
+  {"f2nd",428},
+  {"fMax",315},
+  {"fMin",315},
+  {"fPart",296},
+  {"faces",1094},
+  {"facteurs_premiers",167},
+  {"factor",268},
+  {"factor_xn",375},
+  {"factorial",192},
+  {"factoriser",268},
+  {"factoriser_entier",166},
+  {"factoriser_sur_C",269},
+  {"factors",381},
+  {"faire",858},
+  {"false",136},
+  {"fclose",862},
+  {"fcoeff",443},
+  {"fdistrib",264},
+  {"feuille",294},
+  {"ffonction",297},
+  {"fft",350},
+  {"fieldplot",-1},
+  {"findhelp",33},
+  {"fisher",788},
+  {"fisher_cdf",789},
+  {"fisher_icdf",790},
+  {"fisherd",788},
+  {"flatten",508},
+  {"float2rational",198},
+  {"floor",296},
+  {"fonction",297},
+  {"fonction_derivee",306},
+  {"fopen",862},
+  {"for",855},
+  {"format",157},
+  {"fourier_an",348},
+  {"fourier_bn",348},
+  {"fourier_cn",348},
+  {"fpour",855},
+  {"fprint",862},
+  {"frac",296},
+  {"fracmod",455},
+  {"frame_2d",889},
+  {"frame_3d",1019},
+  {"frequences",733},
+  {"frequences_cumulees",734},
+  {"frequencies",733},
+  {"frobenius_norm",637},
+  {"froot",442},
+  {"fsi",852},
+  {"fsolve",-1},
+  {"ftantque",858},
+  {"func",838},
+  {"funcplot",-1},
+  {"function",297},
+  {"function_diff",306},
+  {"fxnd",428},
+  {"gammad",792},
+  {"gammad_cdf",793},
+  {"gammad_icdf",794},
+  {"gauche",688},
+  {"gauss",671},
+  {"gauss_seidel_linsolve",699},
+  {"gaussjord",694},
+  {"gaussquad",110},
+  {"gbasis",420},
+  {"gcd",162},
+  {"gcdex",406},
+  {"genpoly",423},
+  {"geometric",798},
+  {"geometric_cdf",799},
+  {"geometric_icdf",800},
+  {"getDenom",201},
+  {"getKey",836},
+  {"getNum",200},
+  {"getType",840},
+  {"giac",-1},
+  {"goto",859},
+  {"grad",678},
+  {"gramschmidt",673},
+  {"graph2tex",-1},
+  {"graph3d2tex",-1},
+  {"graphe",-1},
+  {"graphe3d",-1},
+  {"graphe_aire",-1},
+  {"graphe_probabiliste",-1},
+  {"graphe_suite",-1},
+  {"greduce",421},
+  {"grid_paper",893},
+  {"groupermu",245},
+  {"hadamard",580},
+  {"half_cone",1089},
+  {"half_line",917},
+  {"halftan",339},
+  {"halftan_hyp2exp",340},
+  {"halt",880},
+  {"hamdist",142},
+  {"harmonic_conjugate",1012},
+  {"harmonic_division",1011},
+  {"has",710},
+  {"hasard",759},
+  {"hauteur",926},
+  {"head",146},
+  {"hermite",416},
+  {"hessenberg",653},
+  {"hessian",680},
+  {"heugcd",404},
+  {"hexagon",941},
+  {"hexagone",941},
+  {"hilbert",566},
+  {"histogram",732},
+  {"histogramme",732},
+  {"hold",262},
+  {"homothetie",988},
+  {"homothety",988},
+  {"horner",382},
+  {"hyp2exp",353},
+  {"hyperbola",956},
+  {"hyperbole",956},
+  {"iPart",296},
+  {"iabcuv",184},
+  {"ibasis",621},
+  {"ibpdv",312},
+  {"ibpu",312},
+  {"icdf",820},
+  {"ichinrem",185},
+  {"ichrem",185},
+  {"icosaedre",1106},
+  {"icosahedron",1106},
+  {"id",296},
+  {"identifier",838},
+  {"identity",560},
+  {"idivis",169},
+  {"idn",560},
+  {"iegcd",183},
+  {"if",852},
+  {"ifactor",166},
+  {"ifactors",167},
+  {"ifft",351},
+  {"ifte",65},
+  {"igamma",223},
+  {"igcd",162},
+  {"igcdex",183},
+  {"ihermite",654},
+  {"ilaplace",703},
+  {"im",248},
+  {"imag",248},
+  {"image",622},
+  {"implicitplot",-1},
+  {"impression",13},
+  {"in",855},
+  {"inString",152},
+  {"in_ideal",422},
+  {"incircle",950},
+  {"indets",707},
+  {"inequationplot",-1},
+  {"inf",-1},
+  {"infinity",-1},
+  {"input",835},
+  {"inscrit",950},
+  {"insert",514},
+  {"insmod",-1},
+  {"insmode",1118},
+  {"int",308},
+  {"intDiv",171},
+  {"integer",70},
+  {"integrate",308},
+  {"integration",308},
+  {"integrer",308},
+  {"inter",907},
+  {"inter_droite",906},
+  {"inter_unique",906},
+  {"interactive_odeplot",-1},
+  {"interactive_plotode",-1},
+  {"interp",394},
+  {"intersect",290},
+  {"interval2center",479},
+  {"inv",613},
+  {"inverse",613},
+  {"inversion",990},
+  {"invlaplace",703},
+  {"invztrans",705},
+  {"iquo",171},
+  {"iquorem",173},
+  {"iratrecon",455},
+  {"irem",172},
+  {"isPrime",177},
+  {"is_collinear",993},
+  {"is_concyclic",994},
+  {"is_conjugate",1005},
+  {"is_coplanar",1067},
+  {"is_cospheric",1073},
+  {"is_cycle",236},
+  {"is_element",992},
+  {"is_equilateral",996},
+  {"is_harmonic",1006},
+  {"is_harmonic_circle_bundle",1008},
+  {"is_harmonic_line_bundle",1007},
+  {"is_included",500},
+  {"is_inside",995},
+  {"is_isosceles",997},
+  {"is_orthogonal",1004},
+  {"is_parallel",1002},
+  {"is_permu",235},
+  {"is_perpendicular",1003},
+  {"is_prime",177},
+  {"is_pseudoprime",176},
+  {"is_rectangle",998},
+  {"is_rhombus",1000},
+  {"is_square",999},
+  {"ismith",655},
+  {"isobarycenter",910},
+  {"isobarycentre",910},
+  {"isom",657},
+  {"isopolygon",942},
+  {"isopolygone",942},
+  {"isosceles_triangle",932},
+  {"isprime",177},
+  {"ithprime",179},
+  {"jacobi_linsolve",698},
+  {"jacobi_symbol",191},
+  {"jordan",646},
+  {"jusqua",857},
+  {"jusque",855},
+  {"keep_algext",711},
+  {"ker",623},
+  {"kernel",623},
+  {"kill",879},
+  {"kolmogorovd",813},
+  {"kolmogorovt",814},
+  {"l1norm",552},
+  {"l2norm",552},
+  {"label",859},
+  {"lagrange",394},
+  {"laguerre",417},
+  {"laplace",703},
+  {"laplacian",679},
+  {"latex",38},
+  {"lcm",165},
+  {"lcoeff",372},
+  {"ldegree",371},
+  {"lef",147},
+  {"left",688},
+  {"legend",-1},
+  {"legende",-1},
+  {"legendre",415},
+  {"legendre_symbol",190},
+  {"len",523},
+  {"length",523},
+  {"lgcd",164},
+  {"lhs",688},
+  {"lieu",1015},
+  {"ligne_polygonale",742},
+  {"ligne_polygonale_pointee",744},
+  {"limit",317},
+  {"limite",317},
+  {"lin",356},
+  {"line",916},
+  {"line_inter",906},
+  {"line_paper",892},
+  {"line_segments",1101},
+  {"line_width_1",900},
+  {"line_width_2",900},
+  {"line_width_8",900},
+  {"linear_interpolate",745},
+  {"linear_regression",746},
+  {"linear_regression_plot",747},
+  {"lineariser",356},
+  {"lineariser_trigo",323},
+  {"linfnorm",640},
+  {"linsolve",697},
+  {"list2exp",140},
+  {"list2mat",550},
+  {"listplot",743},
+  {"lll",668},
+  {"ln",296},
+  {"lname",707},
+  {"lncollect",357},
+  {"lnexpand",355},
+  {"local",830},
+  {"locus",1015},
+  {"log",296},
+  {"log10",296},
+  {"logarithmic_regression",750},
+  {"logarithmic_regression_plot",751},
+  {"logb",296},
+  {"logistic_regression",756},
+  {"logistic_regression_plot",757},
+  {"loi_normale",776},
+  {"longueur",967},
+  {"longueur2",969},
+  {"losange",937},
+  {"lpsolve",632},
+  {"lsq",700},
+  {"lu",663},
+  {"lvar",708},
+  {"mRow",594},
+  {"mRowAdd",595},
+  {"makelist",547},
+  {"makemat",570},
+  {"makesuite",521},
+  {"makevector",522},
+  {"map",542},
+  {"maple2mupad",46},
+  {"maple2xcas",45},
+  {"maple_ifactors",168},
+  {"maple_mode",27},
+  {"markov",821},
+  {"mat2list",551},
+  {"mathml",43},
+  {"matpow",647},
+  {"matrix",571},
+  {"matrix_norm",640},
+  {"max",296},
+  {"maximize",634},
+  {"maxnorm",552},
+  {"mean",720},
+  {"median",724},
+  {"median_line",925},
+  {"mediane",925},
+  {"mediatrice",927},
+  {"member",533},
+  {"mgf",818},
+  {"mid",146},
+  {"midpoint",909},
+  {"milieu",909},
+  {"min",296},
+  {"minimax",636},
+  {"minimize",634},
+  {"minus",290},
+  {"mkisom",658},
+  {"mksa",129},
+  {"mod",172},
+  {"modgcd",404},
+  {"mods",172},
+  {"moustache",731},
+  {"moyenne",720},
+  {"mul",541},
+  {"mult_c_conjugate",254},
+  {"mult_conjugate",266},
+  {"multinomial",772},
+  {"multiplier_conjugue",266},
+  {"multiplier_conjugue_complexe",254},
+  {"mupad2maple",48},
+  {"mupad2xcas",47},
+  {"nCr",193},
+  {"nDeriv",108},
+  {"nInt",109},
+  {"nPr",195},
+  {"nSolve",-1},
+  {"ncols",609},
+  {"negbinomial",769},
+  {"negbinomial_cdf",770},
+  {"negbinomial_icdf",771},
+  {"newList",545},
+  {"newMat",561},
+  {"newton",107},
+  {"nextperm",230},
+  {"nextprime",180},
+  {"nodisp",76},
+  {"nop",497},
+  {"nops",523},
+  {"norm",552},
+  {"normal",273},
+  {"normal_cdf",777},
+  {"normal_icdf",778},
+  {"normald",776},
+  {"normald_cdf",777},
+  {"normald_icdf",778},
+  {"normalize",553},
+  {"normalt",824},
+  {"not",138},
+  {"nprimes",178},
+  {"nrows",608},
+  {"nuage_points",740},
+  {"nullspace",623},
+  {"numer",200},
+  {"octaedre",1104},
+  {"octahedron",1104},
+  {"odd",175},
+  {"odeplot",-1},
+  {"odesolve",111},
+  {"of",542},
+  {"op",294},
+  {"open_polygon",944},
+  {"or",138},
+  {"ord",149},
+  {"order_size",471},
+  {"ordinate",960},
+  {"ordonnee",960},
+  {"orthocenter",908},
+  {"orthocentre",908},
+  {"orthogonal",1034},
+  {"osculating_circle",716},
+  {"output",845},
+  {"p1oc2",239},
+  {"p1op2",237},
+  {"pa2b2",188},
+  {"pade",476},
+  {"papier_ligne",892},
+  {"papier_pointe",891},
+  {"papier_quadrille",893},
+  {"papier_triangule",894},
+  {"parabola",957},
+  {"parabole",957},
+  {"parallel",922},
+  {"parallele",922},
+  {"parallelepiped",1096},
+  {"parallelepipede",1096},
+  {"parallelogram",939},
+  {"parallelogramme",939},
+  {"parameq",965},
+  {"paramplot",-1},
+  {"pari",164},
+  {"part",284},
+  {"partfrac",432},
+  {"pas",855},
+  {"pcar",648},
+  {"pcar_hessenberg",649},
+  {"pcoef",386},
+  {"pcoeff",386},
+  {"pente",977},
+  {"penteen",978},
+  {"penteenbrut",978},
+  {"perimeter",975},
+  {"perimeterat",976},
+  {"perimeteratraw",976},
+  {"perimetre",975},
+  {"perimetreen",976},
+  {"perimetreenbrut",976},
+  {"perm",195},
+  {"perminv",242},
+  {"permu2cycles",231},
+  {"permu2mat",234},
+  {"permuorder",244},
+  {"perpen_bisector",927},
+  {"perpendiculaire",923},
+  {"perpendiculaire_commune",1035},
+  {"perpendicular",923},
+  {"peval",374},
+  {"phi",189},
+  {"pi",-1},
+  {"piecewise",65},
+  {"pivot",696},
+  {"plan",1036},
+  {"plane",1036},
+  {"playsnd",1112},
+  {"plot",-1},
+  {"plot3d",-1},
+  {"plotarea",-1},
+  {"plotcontour",-1},
+  {"plotdensity",-1},
+  {"plotfield",-1},
+  {"plotfunc",-1},
+  {"plotimplicit",-1},
+  {"plotinequation",-1},
+  {"plotlist",743},
+  {"plotode",-1},
+  {"plotparam",-1},
+  {"plotpolar",-1},
+  {"plotseq",-1},
+  {"pmin",257},
+  {"point",902},
+  {"point2d",904},
+  {"point3d",1021},
+  {"point_div",1009},
+  {"point_polaire",905},
+  {"poisson",773},
+  {"poisson_cdf",774},
+  {"poisson_icdf",775},
+  {"polaire",1013},
+  {"polaire_reciproque",1014},
+  {"polar",1013},
+  {"polar_coordinates",963},
+  {"polar_point",905},
+  {"polarplot",-1},
+  {"pole",1013},
+  {"poly1",362},
+  {"poly2symb",365},
+  {"polyEval",374},
+  {"polyedre",1098},
+  {"polygon",943},
+  {"polygone",943},
+  {"polygone_ouvert",944},
+  {"polygonplot",742},
+  {"polygonscatterplot",744},
+  {"polyhedron",1098},
+  {"polynom",471},
+  {"polynomial_regression",752},
+  {"polynomial_regression_plot",753},
+  {"poslbdLMQ",439},
+  {"posubLMQ",438},
+  {"potential",683},
+  {"pour",855},
+  {"pow2exp",359},
+  {"power_regression",754},
+  {"power_regression_plot",755},
+  {"powermod",453},
+  {"powerpc",953},
+  {"powexpand",358},
+  {"powmod",453},
+  {"prepend",527},
+  {"preval",283},
+  {"prevperm",229},
+  {"prevprime",181},
+  {"primpart",377},
+  {"print",842},
+  {"printpow",844},
+  {"prism",1097},
+  {"prisme",1097},
+  {"product",541},
+  {"produit_scalaire",558},
+  {"projection",991},
+  {"proot",-1},
+  {"propFrac",199},
+  {"propfrac",199},
+  {"psrgcd",404},
+  {"ptayl",383},
+  {"puissance",953},
+  {"purge",73},
+  {"pyramid",1095},
+  {"pyramide",1095},
+  {"q2a",669},
+  {"qr",660},
+  {"quadrilateral",940},
+  {"quadrilatere",940},
+  {"quadrique",676},
+  {"quadrique_reduite",677},
+  {"quand",65},
+  {"quantile",728},
+  {"quartile1",-1},
+  {"quartile3",-1},
+  {"quartiles",725},
+  {"quest",77},
+  {"quo",397},
+  {"quorem",401},
+  {"quote",262},
+  {"r2e",365},
+  {"radical_axis",954},
+  {"radius",980},
+  {"rand",759},
+  {"randMat",562},
+  {"randNorm",763},
+  {"randPoly",391},
+  {"randbinomial",760},
+  {"randexp",764},
+  {"randint",759},
+  {"randmarkov",822},
+  {"randmatrix",562},
+  {"randmultinomial",761},
+  {"randnorm",763},
+  {"random",759},
+  {"randperm",228},
+  {"randpoisson",762},
+  {"randpoly",391},
+  {"randseed",758},
+  {"randvector",548},
+  {"range",546},
+  {"rank",617},
+  {"ranm",562},
+  {"ranv",548},
+  {"rassembler_trigo",325},
+  {"rat_jordan",645},
+  {"rational",838},
+  {"rationalroot",440},
+  {"ratnormal",276},
+  {"rayon",980},
+  {"rdiv",211},
+  {"re",247},
+  {"read",85},
+  {"readrgb",1115},
+  {"readwav",1110},
+  {"real",70},
+  {"realroot",435},
+  {"reciprocation",1014},
+  {"rectangle",938},
+  {"rectangular_coordinates",962},
+  {"redim",591},
+  {"reduced_conic",675},
+  {"reduced_quadric",677},
+  {"ref",693},
+  {"reflection",986},
+  {"regroup",272},
+  {"regrouper",272},
+  {"rem",399},
+  {"remain",172},
+  {"remove",532},
+  {"reorder",392},
+  {"repeat",857},
+  {"repere_2d",889},
+  {"repere_3d",1019},
+  {"repeter",857},
+  {"replace",592},
+  {"residue",475},
+  {"resoudre",690},
+  {"resoudre_dans_C",691},
+  {"resoudre_systeme_lineaire",697},
+  {"restart",74},
+  {"resultant",414},
+  {"retourne",830},
+  {"return",830},
+  {"reverse_rsolve",701},
+  {"revert",474},
+  {"revlist",517},
+  {"rhombus",937},
+  {"rhs",689},
+  {"right",689},
+  {"right_triangle",933},
+  {"risch",309},
+  {"rm_a_z",62},
+  {"rm_all_vars",63},
+  {"rmbreakpoint",877},
+  {"rmwatch",875},
+  {"romberg",109},
+  {"root",212},
+  {"rootof",384},
+  {"roots",385},
+  {"rotate",518},
+  {"rotation",987},
+  {"round",296},
+  {"row",585},
+  {"rowAdd",593},
+  {"rowDim",608},
+  {"rowNorm",638},
+  {"rowSwap",596},
+  {"rowdim",608},
+  {"rownorm",638},
+  {"rowspace",626},
+  {"rowswap",596},
+  {"rref",694},
+  {"rsolve",287},
+  {"saisir",835},
+  {"saisir_chaine",835},
+  {"sample",759},
+  {"sans_factoriser",-1},
+  {"scalarProduct",558},
+  {"scalar_product",558},
+  {"scale",594},
+  {"scaleadd",595},
+  {"scatterplot",740},
+  {"sec",321},
+  {"segment",918},
+  {"select",531},
+  {"semi_augment",599},
+  {"seq",496},
+  {"seqplot",-1},
+  {"seqsolve",286},
+  {"series",472},
+  {"shift",519},
+  {"shift_phase",324},
+  {"shuffle",228},
+  {"si",852},
+  {"sign",296},
+  {"signature",241},
+  {"similarity",989},
+  {"similitude",989},
+  {"simp2",203},
+  {"simplex_reduce",-1},
+  {"simplifier",274},
+  {"simplify",274},
+  {"simult",695},
+  {"sin",321},
+  {"sin2costan",335},
+  {"sincos",333},
+  {"single_inter",906},
+  {"sinh",296},
+  {"sinon",852},
+  {"size",145},
+  {"sizes",524},
+  {"slope",977},
+  {"slopeat",978},
+  {"slopeatraw",978},
+  {"smith",656},
+  {"smod",172},
+  {"snedecor",788},
+  {"snedecor_cdf",789},
+  {"snedecor_icdf",790},
+  {"snedecord",788},
+  {"solve",690},
+  {"sommet",294},
+  {"sommets",913},
+  {"sommets_abc",913},
+  {"sommets_abca",914},
+  {"sort",528},
+  {"sorta",529},
+  {"sortd",530},
+  {"soundsec",1113},
+  {"specnorm",640},
+  {"sphere",1091},
+  {"spline",395},
+  {"split",267},
+  {"sq",296},
+  {"sqrfree",380},
+  {"sqrt",296},
+  {"square",936},
+  {"srand",758},
+  {"sst",873},
+  {"sst_in",873},
+  {"stdDev",722},
+  {"stddev",721},
+  {"stddevp",722},
+  {"sto",850},
+  {"string",866},
+  {"student",780},
+  {"student_cdf",781},
+  {"student_icdf",782},
+  {"studentd",780},
+  {"studentt",825},
+  {"sturm",410},
+  {"sturmab",411},
+  {"sturmseq",412},
+  {"subMat",586},
+  {"subs",280},
+  {"subsop",587},
+  {"subst",278},
+  {"substituer",278},
+  {"subtype",839},
+  {"sum",310},
+  {"sum_riemann",311},
+  {"supposons",70},
+  {"suppress",513},
+  {"surd",296},
+  {"svd",666},
+  {"svl",665},
+  {"swapcol",597},
+  {"swaprow",596},
+  {"switch",854},
+  {"switch_axes",887},
+  {"sylvester",413},
+  {"symb2poly",366},
+  {"symetrie",986},
+  {"syst2mat",692},
+  {"tCollect",325},
+  {"tExpand",319},
+  {"table",-1},
+  {"table_fonction",316},
+  {"table_suite",288},
+  {"tablefunc",316},
+  {"tableseq",288},
+  {"tabvar",303},
+  {"tail",146},
+  {"tan",321},
+  {"tan2cossin2",338},
+  {"tan2sincos",334},
+  {"tan2sincos2",337},
+  {"tangent",94},
+  {"tangente",94},
+  {"tanh",296},
+  {"tantque",858},
+  {"taux_accroissement",305},
+  {"taylor",471},
+  {"tchebyshev1",418},
+  {"tchebyshev2",419},
+  {"tcoeff",373},
+  {"tcollect",325},
+  {"tetraedre",1095},
+  {"tetraedre_centre",1102},
+  {"tetrahedron",1095},
+  {"texpand",319},
+  {"textinput",835},
+  {"then",852},
+  {"thickness",-1},
+  {"throw",885},
+  {"time",-1},
+  {"tlin",323},
+  {"tpsolve",633},
+  {"trace",1017},
+  {"tracer_aire",-1},
+  {"tran",612},
+  {"translation",985},
+  {"transpose",612},
+  {"triangle",931},
+  {"triangle_equilateral",934},
+  {"triangle_isocele",932},
+  {"triangle_paper",894},
+  {"triangle_rectangle",933},
+  {"trig2exp",342},
+  {"trigcos",344},
+  {"trigexpand",322},
+  {"trigsin",343},
+  {"trigtan",345},
+  {"trn",618},
+  {"true",136},
+  {"trunc",296},
+  {"truncate",387},
+  {"try",884},
+  {"tsimplify",361},
+  {"tuer",879},
+  {"tuple",504},
+  {"type",838},
+  {"ufactor",131},
+  {"ugamma",222},
+  {"unapply",293},
+  {"unarchive",68},
+  {"unfactored",-1},
+  {"uniform",804},
+  {"uniform_cdf",805},
+  {"uniform_icdf",806},
+  {"uniformd",804},
+  {"uniformd_cdf",805},
+  {"uniformd_icdf",806},
+  {"union",290},
+  {"unitV",553},
+  {"unquote",263},
+  {"until",857},
+  {"user_operator",291},
+  {"usimplify",132},
+  {"valuation",371},
+  {"vandermonde",567},
+  {"var",830},
+  {"variance",723},
+  {"vecteur",921},
+  {"vecteur_unitaire_Ox_2d",888},
+  {"vecteur_unitaire_Ox_3d",1018},
+  {"vecteur_unitaire_Oy_2d",888},
+  {"vecteur_unitaire_Oy_3d",1018},
+  {"vecteur_unitaire_Oz_3d",1018},
+  {"vector",921},
+  {"version",-1},
+  {"vertices",913},
+  {"vertices_abc",913},
+  {"vertices_abca",914},
+  {"vpotential",684},
+  {"watch",874},
+  {"weibull",810},
+  {"weibull_cdf",811},
+  {"weibull_icdf",812},
+  {"weibulld",810},
+  {"weibulld_cdf",811},
+  {"weibulld_icdf",812},
+  {"when",65},
+  {"while",858},
+  {"widget_size",23},
+  {"wilcoxonp",815},
+  {"wilcoxons",816},
+  {"wilcoxont",817},
+  {"write",861},
+  {"writergb",1117},
+  {"writewav",1111},
+  {"wz_certificate",197},
+  {"xor",138},
+  {"xyztrange",895},
+  {"zeros",270},
+  {"zip",544},
+  {"ztrans",704},
+};
+
+const int helpfr_size=sizeof(helpfr)/sizeof(charptrint);
+
+int dichotomic_search(const charptrint * tab,unsigned tab_size,const char * s){
+  int beg=0,end=tab_size,cur,test;
+  // string index is always >= begin and < end
+  for (;;){
+    cur=(beg+end)/2;
+    test=strcmp(s,tab[cur].s);
+    if (!test)
+      return cur;
+    if (cur==beg)
+      return -1;
+    if (test>0)
+      beg=cur;
+    else
+      end=cur;
+  }
+  return -1;
+}
+
+int longhelp_pos(const char * s){
+  int pos=dichotomic_search(lang==1?helpfr:helpen,lang==1?helpfr_size:helpen_size,s);
+  if (pos==-1)
+    return pos;
+  return lang==1?helpfr[pos].i:helpen[pos].i;
+}
+
+string longhelp(const char * s){
+  string cmd(s);
+  for (int i=0;i<cmd.size();++i){
+    if (cmd[i]=='(' || cmd[i]==' ')
+      cmd=cmd.substr(0,i);
+  }
+  int pos=longhelp_pos(cmd.c_str());
+  if (pos==-1)
+    return "index.html";
+  string pos_s=print_INT_(pos);
+  if (pos_s.size()==1)
+    pos_s="00"+pos_s;
+  else if (pos_s.size()==2)
+    pos_s="0"+pos_s;    
+  return string((lang==1)?"cascmd_fr":"cascmd_en")+pos_s+".html";
+}
+#endif
+  
   // back is the number of char that should be deleted before inserting
   string help_insert(const char * cmdline,int & back,int exec,GIAC_CONTEXT,bool warn){
     if (exec==KEY_CTRL_OK)
@@ -2081,6 +4784,14 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
           elem.pop_back();
       }
       exec=doTextArea(&text,contextptr);
+#ifdef QRHELP
+      if (exec==KEY_CHAR_EXPN10 || exec==KEY_CTRL_SETUP){
+        string url=fourier_url;
+        url += "giac/doc";
+        url += (lang==1?"/fr/cascmd_fr/":"en/cascmd_en/")+longhelp(elem[0].s.c_str());
+        xcas::QRdisp(url.c_str(),(string("Xcas doc qrcode ")+elem[0].s).c_str());
+      }
+#endif
     }
     if (exec==KEY_SHUTDOWN)
       return "";
@@ -2124,10 +4835,6 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
     }
     return "";
   }
-
-#if 0 // def NUMWORKS
-#define MENUITEM_MALLOC
-#endif
 
   // 0 on exit, 1 on success
   int doCatalogMenu(char* insertText, const char* title, int category,GIAC_CONTEXT) {
@@ -2217,14 +4924,14 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
       menu.height = MENUHEIGHT-1;
       while(1) {
 #ifdef HP39
-	drawRectangle(0,114,LCD_WIDTH_PX,14,giac::_WHITE);
+	drawRectangle(0,114,LCD_WIDTH_PX,14,SDK_WHITE);
 	PrintMini(0,114,"input | ex1 | ex2 |     |     | help  ",4);
 #else
-	drawRectangle(0,200,LCD_WIDTH_PX,22,giac::_WHITE);
+	drawRectangle(0,200,LCD_WIDTH_PX,22,SDK_WHITE);
 #ifdef NSPIRE_NEWLIB
-	PrintMini(0,200,(category==CAT_CATEGORY_ALL?"menu: help | ret: ex1 | tab: ex2":"menu: help | ret ex1 | tab ex2"),4,33333,giac::_WHITE);
+	PrintMini7(0,200,(category==CAT_CATEGORY_ALL?"menu: help | ret: ex1 | tab: ex2 | calc: QRcode":"menu: help | ret: ex1 | tab: ex2 | calc: QRcode"),4,33333,SDK_WHITE,false);
 #else
-	PrintMini(0,200,(category==CAT_CATEGORY_ALL?"Toolbox help | Ans ex1 | EXE  ex2":"Toolbox help | EXE ex1 | Ans ex2"),4,33333,giac::_WHITE);
+	PrintMini7(0,200,(category==CAT_CATEGORY_ALL?"Tool help|10^ QR|Ans ex1|EXE ex2":"Tool help|10^ QR|Ans ex1|EXE ex2"),4,33333,SDK_WHITE,false);
 #endif
 #endif
 	int sres = 0;
@@ -2245,7 +4952,16 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 	  return sres;
 	}
 	int index=menuitems[menu.selection-1].isfolder;
-	if(sres == KEY_CTRL_CATALOG || sres==KEY_BOOK || sres==KEY_CTRL_F6) {
+#ifdef QRHELP
+        if (sres==KEY_CHAR_EXPN10 || sres==KEY_CTRL_SETUP){
+          const char * fcmdname=menuitems[menu.selection-1].text;
+          string url=fourier_url;
+          url += "giac/doc";
+          url += (lang==1?"/fr/cascmd_fr/":"en/cascmd_en/")+longhelp(fcmdname);
+          xcas::QRdisp(url.c_str(),(string("Xcas doc qrcode ")+fcmdname).c_str());
+        }
+#endif
+	if (sres == KEY_CTRL_CATALOG || sres==KEY_BOOK || sres==KEY_CTRL_F6) {
 	  const char * example=index<allcmds?completeCat[index].example:0;
 	  const char * example2=index<allcmds?completeCat[index].example2:0;
 	  xcas::textArea text;
@@ -2284,26 +5000,26 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 	    else {
 	      // *logptr(contextptr) << token << "\n";
 	      if (isopt){
-          if (token==_INT_PLOT+T_NUMBER*256){
-            autoexample="display="+elem[0].s;
-            elem[1].s ="Option d'affichage: "+ autoexample;
-          }
-          if (token==_INT_COLOR+T_NUMBER*256){
-            autoexample="display="+elem[0].s;
-            elem[1].s="Option de couleur: "+ autoexample;
-          }
-          if (token==_INT_SOLVER+T_NUMBER*256){
-            autoexample=elem[0].s;
-            elem[1].s="Option de fsolve: " + autoexample;
-          }
-          if (token==_INT_TYPE+T_TYPE_ID*256){
-            autoexample=elem[0].s;
-            elem[1].s="Type d'objet: " + autoexample;
-          }
+                if (token==_INT_PLOT+T_NUMBER*256){
+                  autoexample="display="+elem[0].s;
+                  elem[1].s ="Option d'affichage: "+ autoexample;
+                }
+                if (token==_INT_COLOR+T_NUMBER*256){
+                  autoexample="display="+elem[0].s;
+                  elem[1].s="Option de couleur: "+ autoexample;
+                }
+                if (token==_INT_SOLVER+T_NUMBER*256){
+                  autoexample=elem[0].s;
+                  elem[1].s="Option de fsolve: " + autoexample;
+                }
+                if (token==_INT_TYPE+T_TYPE_ID*256){
+                  autoexample=elem[0].s;
+                  elem[1].s="Type d'objet: " + autoexample;
+                }
 	      }
 	      if (isall){
-          if (token==T_UNARY_OP || token==T_UNARY_OP_38)
-            elem[1].s=elem[0].s+"(args)";
+                if (token==T_UNARY_OP || token==T_UNARY_OP_38)
+                  elem[1].s=elem[0].s+"(args)";
 	      }
 	    }
 	  }
@@ -2320,9 +5036,9 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 	      ex += example+1;
 	    else {
 	      if (index<allcmds){
-          ex += insert_string(index);
-          ex += example;
-          ex += ")";
+                ex += insert_string(index);
+                ex += example;
+                ex += ")";
 	      }
 	      else ex+=example;
 	    }
@@ -2334,15 +5050,15 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 	      string ex2="Ans: ";
 #endif
 	      if (example2[0]=='#')
-          ex2 += example2+1;
+                ex2 += example2+1;
 	      else {
-          if (index<allcmds){
-            ex2 += insert_string(index);
-            ex2 += example2;
-            ex2 += ")";
-          }
-          else
-            ex2 += example2;
+                if (index<allcmds){
+                  ex2 += insert_string(index);
+                  ex2 += example2;
+                  ex2 += ")";
+                }
+                else
+                  ex2 += example2;
 	      }
 	      elem[3].newLine = 1;
 	      // elem[3].lineSpacing = 0;
@@ -2357,6 +5073,14 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 	      elem.pop_back();
 	  }
 	  sres=doTextArea(&text,contextptr);
+#ifdef QRHELP
+          if (sres==KEY_CHAR_EXPN10 || sres==KEY_CTRL_SETUP){
+            string url=fourier_url;
+            url += "giac/doc";
+            url += (lang==1?"/fr/cascmd_fr/":"en/cascmd_en/")+longhelp(elem[0].s.c_str());
+            xcas::QRdisp(url.c_str(),(string("Xcas doc qrcode ")+elem[0].s).c_str());
+          }
+#endif
 	}
 	if (sres == KEY_CHAR_ANS || sres=='\t' ||sres==KEY_BOOK || sres==KEY_CTRL_EXE || sres==KEY_CTRL_F2 || sres==KEY_CTRL_F3) {
 	  reset_kbd();
@@ -2611,7 +5335,7 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 	vector<int> vi(9);
 	tailles(w,vi);
 	total += vi[8];
-	if (vi[8]<w.is_symb_of_sommet(at_pnt)?1500:500)
+	if (vi[8]<(w.is_symb_of_sommet(at_pnt)?1500:500))
 	  vs[i]+=":="+pnt2string(w,contextptr);
 	else {
 	  vs[i] += " ~";
@@ -3090,7 +5814,7 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 #endif
     }
     gen res=turtle_state(contextptr);
-#if defined EMCC || defined (EMCC2) // should directly interact with canvas
+#if !defined SDL_KHICAS && (defined EMCC || defined (EMCC2) ) // should directly interact with canvas
     return gen(turtlevect2vecteur(turtle_stack()),_LOGO__VECT);
 #endif
     return res;
@@ -3802,6 +6526,7 @@ const catalogFunc completeCaten[] = { // list of all functions (including some n
 namespace xcas {
 #endif // ndef NO_NAMESPACE_XCAS
   void drawRectangle(int x,int y,int w,int h,int c){
+    //console_log(("drawRectangle "+print_INT_(x)+","+print_INT_(y)+" w="+print_INT_(w)+" h="+print_INT_(h)+" c="+print_INT_(c)).c_str());
 #ifdef BW
     draw_rectangle(x,y,w,h,c);
 #else
@@ -6161,7 +8886,7 @@ namespace xcas {
     gr.XYZ2ij(double3(x,y,z),i,j);
   }
 
-  const int4 tabcolorcplx[]={
+  const int4bis tabcolorcplx[]={
 {63488,47104,30720,14336},
 {63489,47105,30720,14336},
 {63491,47106,30721,14336},
@@ -6430,9 +9155,24 @@ namespace xcas {
       argcolor=M_PI; return -d;
     }
     double x=g._CPLXptr->_DOUBLE_val,y=(g._CPLXptr+1)->_DOUBLE_val;
-    argcolor=std::atan2(x,y);
+    argcolor=std::atan2(y,x);
     double n=std::sqrt(x*x+y*y); // will be encoded in a float, no overflow care
     return n;
+  }
+
+  bool discard(Graph2d * gr,double x,double y,double z){
+    double X,Y,Z,f=0.1;
+    do_transform(gr->invtransform,x,y,z,X,Y,Z);
+    double dX=f*(gr->window_xmax-gr->window_xmin);
+    if (X<gr->window_xmin-dX || X>gr->window_xmax+dX)
+      return true;
+    double dY=f*(gr->window_ymax-gr->window_ymin);
+    if (Y<gr->window_ymin-dY || Y>gr->window_ymax+dY)
+      return true;
+    double dZ=f*(gr->window_zmax-gr->window_zmin);
+    if (Z<gr->window_zmin-dZ || Z>gr->window_zmax+dZ)
+      return true;
+    return false;
   }
 
   // hpersurface encoded as a matrix
@@ -6443,7 +9183,11 @@ namespace xcas {
     if (h>9) h=9; if (h<1) h=1;
     // save zmin/zmax on the stack (4K required)
     const int jmintabsize=512;
+#ifdef HAVE_ALLOCA_H
     short int *jmintab=(short int *)alloca(jmintabsize*sizeof(short int)), * jmaxtab=(short int *)alloca(jmintabsize*sizeof(short int)); // assumes LCD_WIDTH_PX<=jmintabsize
+#else
+    short int jmintab[jmintabsize], jmaxtab[jmintabsize];
+#endif
     for (int i=0;i<jmintabsize;++i){
       jmintab[i]=LCD_HEIGHT_PX;
       jmaxtab[i]=0;
@@ -6633,6 +9377,8 @@ namespace xcas {
 	    }
 	    yx1=y1-x1; yx2=y2-x2; yx3=y3-x3; yx4=y4-x4;
 #ifdef HYPERQUAD
+            if (discard(this,x1,y1,z1) || discard(this,x2,y2,z2) || discard(this,x3,y3,z3))
+              continue;
 	    tri[0]=double3(x1,y1,z1);
 	    tri[1]=double3(x2,y2,z2);
 	    tri[2]=double3(x4,y4,z4);
@@ -6649,7 +9395,7 @@ namespace xcas {
 		if (idx<0 || idx >=sizeof(tabcolorcplx)/(sizeof(int4)))
 		  idx = 0;
 		//CERR << idx << " ";
-		res.colorptr=&tabcolorcplx[idx];
+		res.colorptr=&((const int4*)tabcolorcplx)[idx];
 	      }
 	      else
 		res.colorptr=&hyp_color[k];
@@ -8012,11 +10758,39 @@ namespace xcas {
     double dx=x1-x0,dy=y1-y0;
     double n=sqrt(dx*dx+dy*dy);
     dx/=n; dy/=n;
+#if 1
+    if (dx==0){
+      if (y0>y1) swapint(y0,y1);
+      int h=y1-y0;
+      drawRectangle(x0-fl_line_width/2,y0,fl_line_width,h,c);
+    } else if (dy==0){
+      if (x0>x1) swapint(x0,x1);
+      int w=x1-x0;
+      drawRectangle(x0,y0-fl_line_width/2,w,fl_line_width,c);      
+    } else {
+      vector< vector<int> > v;
+      vector<int> w(2);
+      w[0]=int(x0-fl_line_width*dy/2+.5);
+      w[1]=int(y0+fl_line_width*dx/2+.5);
+      v.push_back(w);
+      w[0]=int(x0+fl_line_width*dy/2+.5);
+      w[1]=int(y0-fl_line_width*dx/2+.5);
+      v.push_back(w);
+      w[0]=int(x1+fl_line_width*dy/2+.5);
+      w[1]=int(y1-fl_line_width*dx/2+.5);
+      v.push_back(w);
+      w[0]=int(x1-fl_line_width*dy/2+.5);
+      w[1]=int(y1+fl_line_width*dx/2+.5);
+      v.push_back(w);
+      draw_filled_polygon(v,0,LCD_WIDTH_PX,0,LCD_HEIGHT_PX,c);
+    }
+#else
     for (int d=-fl_line_width/2;d<=(fl_line_width+1)/2;++d){
       draw_line(x0-d*dy,y0+d*dx,x1-d*dy,y1+d*dx,c);
     }
-    draw_filled_circle(x0,y0,(fl_line_width-1)/2,c,true,true);
-    draw_filled_circle(x1,y1,(fl_line_width-1)/2,c,true,true);
+#endif
+    draw_filled_circle(x0,y0,(fl_line_width)/2,c,true,true);
+    draw_filled_circle(x1,y1,(fl_line_width)/2,c,true,true);
   }
 
   inline void fl_polygon(int x0,int y0,int x1,int y1,int x2,int y2,int c){
@@ -8272,6 +11046,8 @@ namespace xcas {
 	  if ( (diam.type==_DOUBLE_) && (a1.type==_DOUBLE_) && (a2.type==_DOUBLE_) ){
 	    i1=diam._DOUBLE_val*x_scale/2.0;
 	    j1=diam._DOUBLE_val*y_scale/2.0;
+            if (i1>MAX_DISP_RADIUS || j1>MAX_DISP_RADIUS)
+              return;
 	    double a1d=a1._DOUBLE_val,a2d=a2._DOUBLE_val,angled=angle._DOUBLE_val;
 	    bool changer_sens=a1d>a2d;
 	    if (changer_sens){
@@ -8651,7 +11427,8 @@ namespace xcas {
 	    if (is3d){
 	      find_xyz(i,j,current_depth,x,y,z);
 	      round_xy(x,y); round3(z,window_zmin,window_zmax);
-	      sprintf(s+pos," %s,%s,%s",print_DOUBLE_(x,3).c_str(),print_DOUBLE_(y,3).c_str(),print_DOUBLE_(z,3));
+              const char * xs=print_DOUBLE_(x,3).c_str(),*ys=print_DOUBLE_(y,3).c_str(),*zs=print_DOUBLE_(z,3).c_str();
+	      sprintf(s+pos," %s,%s,%s",xs,ys,zs);
 	    }
 	    else {
 	      find_xy(i,j,x,y);
@@ -8917,7 +11694,7 @@ namespace xcas {
         drawLine(Gi,Gj,Hi,Hj,COLOR_CYAN | 0x800000);
         // current_depth
         if (hp){
-          vector<int2> polyg; int2 IJmin={RAND_MAX,RAND_MAX};
+          vector<int2> polyg; int2 IJmin(RAND_MAX,RAND_MAX);
           // x: A3-C3, B3-D3; E3-G3,F3-H3
           adddepth(polyg,A3,C3,IJmin);
           adddepth(polyg,B3,D3,IJmin);
@@ -8963,7 +11740,7 @@ namespace xcas {
             double x0=m[0]._DOUBLE_val,y0=m[1]._DOUBLE_val,z0=m[2]._DOUBLE_val;
             // a*(x-x0)+b*(y-y0)+c*(z-z0)=0
             // replace 2 coordinates of M with window_xyzminmax and find last coord
-            vector<int2> polyg; int2 IJmin={RAND_MAX,RAND_MAX};
+            vector<int2> polyg; int2 IJmin(RAND_MAX,RAND_MAX);
             // x
             if (a!=0){
               double x=x0-1/a*(b*(window_ymin-y0)+c*(window_zmin-z0));
@@ -9242,6 +12019,178 @@ namespace xcas {
     window_zmax -= d;
   }
 
+  // Turtle
+  inline void swap_double(double & t1,double &t2){
+    double t=t1;t1=t2;t2=t;
+  }
+
+  inline double min_double(double a,double b){
+    return a<b?a:b;
+  }
+
+  inline double max_double(double a,double b){
+    return a>b?a:b;
+  }
+
+  bool smaller_angle(double x,double y,double theta,double cottheta){
+    double X=y*cottheta;
+    // return true if angle(x,y)<theta
+    if (x<=0){
+      if (y<=0){
+        if (theta>=-M_PI/2)
+          return true;
+        return x<X;
+      }
+      if (theta<=M_PI/2)
+        return false;
+      return X<x;
+    }
+    // now x>0
+    if (y<0){
+      if (theta<=-M_PI/2)
+        return false;
+      if (theta>=0)
+        return true;
+      return x<X;
+    }
+    if (theta<=0)
+      return false;
+    if (theta>=M_PI/2)
+      return true;
+    return X<x;
+  }
+
+  int my_round(double x){
+    return int(x+.5);
+  }
+
+  void draw_turtle(double x1,double x2,double xc,double y,double yc,double theta1,double theta2,double cottheta1, double cottheta2, int c,GIAC_CONTEXT){
+    int Y=my_round(yc-y);
+    if (theta1==-M_PI && theta2==M_PI)
+      draw_line(my_round(xc+x1),Y,my_round(xc+x2),Y,c,contextptr);
+    if (theta1>=0 && y<0)
+      return;
+    if (theta2<=0 && y>0)
+      return;
+    if (x1==x2) return;
+    if (x1>x2) swap_double(x1,x2);
+    if (y>0)
+      swap_double(x1,x2);
+    // x1<x2, if y<0 ;  x1>x2 if y>0
+    bool test1,test2,test3,test4;
+    if (y==0){
+      double t1=atan2(y,x1),t2=atan2(y,x2);
+      test1=t2<theta1; test2=t1>theta2;
+      test3=t1<theta1; test4=t2>theta2;
+    }
+    else {
+      test1=smaller_angle(x2,y,theta1,cottheta1);
+      test2=!smaller_angle(x1,y,theta2,cottheta2);
+      test3=smaller_angle(x1,y,theta1,cottheta1);
+      test4=!smaller_angle(x2,y,theta2,cottheta2);
+    }
+    if (test1 || test2)
+      return;
+    if (!test3 && !test4) // (t1>=theta1 && t2<=theta2)
+      draw_line(my_round(xc+x1),Y,my_round(xc+x2),Y,c,contextptr);
+    else {
+      double X1=x1,X2=x2;
+      if (test3) // (t1<theta1)
+        X1=y*cottheta1;
+      if (test4) // (t2>theta2)
+        X2=y*cottheta2;
+      draw_line(my_round(xc+X1),Y,my_round(xc+X2),Y,c,contextptr);
+    }
+  }    
+
+  void draw_turtle_arc(double xc,double yc,double r1,double r2,int c,double theta1, double theta2,GIAC_CONTEXT){
+    if (theta1>theta2)
+      swap_double(theta1,theta2);
+    if (theta1==theta2)
+      return;
+    if (theta2-theta1>=360){
+      theta1=-M_PI;
+      theta2=M_PI;
+    }
+    else {
+      int k=theta1/360;
+      theta1 -= k*360;
+      theta2 -= k*360;
+      if (theta1>180){
+        theta1 -= 360;
+        theta2 -= 360;
+      }
+      if (theta2>180){
+        draw_turtle_arc(xc,yc,r1,r2,c,theta1,180,contextptr);
+        theta1 = -180;
+        theta2 -= 360;
+      }
+      theta1=theta1/180*M_PI;
+      theta2=theta2/180*M_PI;
+    }
+    if (theta1==0) theta1=-1e-10;
+    if (theta2==0) theta2=1e-10;
+    double cotheta1=std::cos(theta1)/std::sin(theta1);
+    double cotheta2=std::cos(theta2)/std::sin(theta2);
+    double r12=r1*r1,r22=r2*r2;
+#if 1
+    int y=std::floor(r2),xmax1=-1,xmax2=0;
+    double delta1=0,delta2=r22-y*y;
+    for (int y=r2;y>=0;--y){
+      if (xmax1<0 && y<=r1){
+        delta1=r12-y*y;
+        xmax1=std::floor(std::sqrt(delta1));
+        delta1=r12-y*y-xmax1*xmax1;
+        while (delta1>0){
+          ++xmax1;
+          delta1 -= 2*xmax1+1;
+        }
+      }
+      if (xmax1<0){
+        draw_turtle(-xmax2,xmax2,xc,y,yc,theta1,theta2,cotheta1,cotheta2,c,contextptr);
+        if (y)
+          draw_turtle(-xmax2,xmax2,xc,-y,yc,theta1,theta2,cotheta1,cotheta2,c,contextptr);
+      }
+      else {
+        draw_turtle(-xmax2,-xmax1,xc,y,yc,theta1,theta2,cotheta1,cotheta2,c,contextptr);
+        draw_turtle(xmax1,xmax2,xc,y,yc,theta1,theta2,cotheta1,cotheta2,c,contextptr);
+        if (y){
+          draw_turtle(-xmax2,-xmax1,xc,-y,yc,theta1,theta2,cotheta1,cotheta2,c,contextptr);
+          draw_turtle(xmax1,xmax2,xc,-y,yc,theta1,theta2,cotheta1,cotheta2,c,contextptr);
+        }
+        // update xmax1
+        delta1 += 2*y-1;
+        while (delta1>0){
+          ++xmax1;
+          delta1 -= 2*xmax1+1;
+        }
+      }
+      // update xmax2
+      delta2 += 2*y-1;
+      while (delta2>0){
+        ++xmax2;
+        delta2 -= 2*xmax2+1;
+      }
+    }
+#else
+    for (double y=-r2;y<=r2;++y){
+      // draw if (x-xc)^2+(y-yc)^2 is in [r1^2,r2^2]
+      // i.e. (x-xc)^2 in [r1^2-dy2,r2^2-dy2]
+      double dy2=y*y;
+      double dx2min=r12-dy2,dx2max=r22-dy2,dxmax=std::sqrt(dx2max),dxmin;
+      // intercept horizontal y with theta1 and theta2
+      if (dx2min<=0){
+        draw_turtle(-dxmax,dxmax,xc,y,yc,theta1,theta2,cotheta1,cotheta2,c,contextptr);
+      }
+      else {
+        dxmin=std::sqrt(dx2min);
+        draw_turtle(-dxmax,-dxmin,xc,y,yc,theta1,theta2,cotheta1,cotheta2,c,contextptr);
+        draw_turtle(dxmin,dxmax,xc,y,yc,theta1,theta2,cotheta1,cotheta2,c,contextptr);  
+      }
+    }
+#endif
+  }
+
   void Turtle::draw(){
     const int deltax=0,deltay=0;
     int horizontal_pixels=LCD_WIDTH_PX-2*giac::COORD_SIZE;
@@ -9284,8 +12233,36 @@ namespace xcas {
 	turtley += int((y-LCD_HEIGHT_PX+10)/turtlezoom);
 #endif
     }
-#if 0
+#if 1
     if (maillage & 0x3){
+      double xdecal=std::floor(turtlex/10.0)*10;
+      double ydecal=std::floor(turtley/10.0)*10;
+      if ( (maillage & 0x3)==1){
+	for (double i=xdecal;i<LCD_WIDTH_PX+xdecal;i+=10){
+	  for (double j=ydecal;j<LCD_HEIGHT_PX+ydecal;j+=10){
+            int effy=deltay+LCD_HEIGHT_PX-int((j-turtley)*turtlezoom+.5);
+            if (effy<20) continue;
+            os_set_pixel(deltax+int((i-turtlex)*turtlezoom+.5),effy,_BLACK);
+	  }
+	}
+      }
+      else {
+        int dp=12;
+	double dj=std::sqrt(3.0)/2*dp,i0=xdecal;
+	for (double j=ydecal;j<LCD_HEIGHT_PX+ydecal;j+=dj){
+	  int J=deltay+int(LCD_HEIGHT_PX-(j-turtley)*turtlezoom);
+          if (J<20) continue;
+	  for (double i=i0;i<LCD_WIDTH_PX+xdecal;i+=dp){
+            os_set_pixel(deltax+int((i-turtlex)*turtlezoom+.5),J,_BLACK);
+	  }
+	  i0 += dp/2.0;
+	  while (i0>=dp)
+	    i0 -= dp;
+	}
+      }
+    }
+#else
+    if (turtlezoom>=1 && (maillage & 0x3)){
       fl_color(FL_BLACK);
       double xdecal=std::floor(turtlex/10.0)*10;
       double ydecal=std::floor(turtley/10.0)*10;
@@ -9310,29 +12287,6 @@ namespace xcas {
       }
     }
 #endif
-    // Show turtle position/cap
-    if (turtleptr &&
-#ifdef TURTLETAB
-	turtle_stack_size &&
-#else
-	!turtleptr->empty() &&
-#endif
-	!(maillage & 0x4)){
-#ifdef TURTLETAB
-      logo_turtle turtle=turtleptr[turtle_stack_size-1];
-#else
-      logo_turtle turtle=turtleptr->back();
-#endif
-      drawRectangle(deltax+horizontal_pixels,deltay,LCD_WIDTH_PX-horizontal_pixels,2*COORD_SIZE,_YELLOW);
-      // drawRectangle(deltax, deltay, LCD_WIDTH_PX, LCD_HEIGHT_PX,COLOR_BLACK);
-      char buf[32];
-      sprintf(buf,"x %i   ",int(turtle.x+.5));
-      text_print(18,buf,deltax+horizontal_pixels,deltay+(2*COORD_SIZE)/3-2,COLOR_BLACK,_YELLOW);
-      sprintf(buf,"y %i   ",int(turtle.y+.5));
-      text_print(18,buf,deltax+horizontal_pixels,deltay+(4*COORD_SIZE)/3-3,COLOR_BLACK,_YELLOW);
-      sprintf(buf,"t %i   ",int(turtle.theta+.5));
-      text_print(18,buf,deltax+horizontal_pixels,deltay+2*COORD_SIZE-4,COLOR_BLACK,_YELLOW);
-    }
     // draw turtle Logo
     if (turtleptr){
       int save_width=fl_line_width;
@@ -9348,20 +12302,22 @@ namespace xcas {
 	logo_turtle prec =(*turtleptr)[0];
 #endif
 	int sp=speed;
-        const int speed_loop=1000;
+        if (sp>0 && sp<10)
+          sp=10-sp;
+        else
+          sp=0;
 	for (int k=1;k<l;++k){
 #ifdef NUMWORKS // speed does not work...
-          sp=0;
+          //sp=0;
 #endif
 	  if (k>=2 && sp){
 	    sync_screen();
-	    for (int i=0;i<speed;++i){
-	      for (int j=0;j<speed_loop;++j){
-		if (iskeydown(5) || iskeydown(4) || iskeydown(22)){
-		  sp=0;
-		  break;
-		}
-	      }
+	    for (int i=0;i<sp;++i){
+              if (iskeydown(5) || iskeydown(4) || iskeydown(22)){
+                sp=0;
+                break;
+              }
+	      wait_1ms(50);
 	    }
 	  }
 #ifdef TURTLETAB
@@ -9409,11 +12365,18 @@ namespace xcas {
 		  if (rempli)
 		    fl_pie(deltax+x,deltay+LCD_HEIGHT_PX-y,R,R,theta1-90,theta2-90,current.color,seg);
 		  else {
-		    for (int d=giacmax(1-r,-(width-1)/2);d<=width/2;++d){
-		      x=int(turtlezoom*(current.x-turtlex-r*std::cos(angle) - (r+d))+.5);
-		      y=int(turtlezoom*(current.y-turtley-r*std::sin(angle) + (r+d))+.5);
-		      R=int(2*turtlezoom*(r+d)+.5);
-		      fl_arc(deltax+x,deltay+LCD_HEIGHT_PX-y,R,R,theta1-90,theta2-90,current.color);
+                    if (width>1){
+		      x=int(turtlezoom*(current.x-turtlex-r*std::cos(angle))+.5);
+		      y=int(turtlezoom*(current.y-turtley-r*std::sin(angle))+.5);
+		      R=int(turtlezoom*r+.5);
+                      draw_turtle_arc(deltax+x,deltay+LCD_HEIGHT_PX-y,R-width/2.0,R+width/2.0,current.color,theta1-90,theta2-90,context0);
+                    } else {
+                      for (int d=giacmax(1-r,-(width-1)/2);d<=width/2;++d){
+                        x=int(turtlezoom*(current.x-turtlex-r*std::cos(angle) - (r+d))+.5);
+                        y=int(turtlezoom*(current.y-turtley-r*std::sin(angle) + (r+d))+.5);
+                        R=int(2*turtlezoom*(r+d)+.5);
+                        fl_arc(deltax+x,deltay+LCD_HEIGHT_PX-y,R,R,theta1-90,theta2-90,current.color);
+                      }
 		    }
 		  }
 		}
@@ -9421,11 +12384,18 @@ namespace xcas {
 		  if (rempli)
 		    fl_pie(deltax+x,deltay+LCD_HEIGHT_PX-y,R,R,90+theta2,90+theta1,current.color,seg);
 		  else {
-		    for (int d=giacmax(1-r,-(width-1)/2);d<=width/2;++d){
-		      x=int(turtlezoom*(current.x-turtlex+r*std::cos(angle) -(r+d))+.5);
-		      y=int(turtlezoom*(current.y-turtley+r*std::sin(angle) +(r+d))+.5);
-		      R=int(2*turtlezoom*(r+d)+.5);
-		      fl_arc(deltax+x,deltay+LCD_HEIGHT_PX-y,R,R,90+theta2,90+theta1,current.color);
+                    if (width>1){
+		      x=int(turtlezoom*(current.x-turtlex+r*std::cos(angle))+.5);
+		      y=int(turtlezoom*(current.y-turtley+r*std::sin(angle))+.5);
+		      R=int(turtlezoom*r+.5);
+                      draw_turtle_arc(deltax+x,deltay+LCD_HEIGHT_PX-y,R-width/2.0,R+width/2.0,current.color,90+theta2,90+theta1,context0);
+                    } else {
+                      for (int d=giacmax(1-r,-(width-1)/2);d<=width/2;++d){
+                        x=int(turtlezoom*(current.x-turtlex+r*std::cos(angle) -(r+d))+.5);
+                        y=int(turtlezoom*(current.y-turtley+r*std::sin(angle) +(r+d))+.5);
+                        R=int(2*turtlezoom*(r+d)+.5);
+                        fl_arc(deltax+x,deltay+LCD_HEIGHT_PX-y,R,R,90+theta2,90+theta1,current.color);
+                      }
 		    }
 		  }
 		}
@@ -9459,8 +12429,8 @@ namespace xcas {
 		    }
 		    fl_pie(deltax+x,deltay+LCD_HEIGHT_PX-y,R,R,0,360,current.color,false);
 		  }
-		  vi[-i][0]=deltax+turtlezoom*(t.x-turtlex);
-		  vi[-i][1]=deltay+LCD_HEIGHT_PX+turtlezoom*(turtley-t.y);
+		  vi[-i][0]=my_round(deltax+turtlezoom*(t.x-turtlex));
+		  vi[-i][1]=my_round(deltay+LCD_HEIGHT_PX+turtlezoom*(turtley-t.y));
 		  //*logptr(contextptr) << i << " " << vi[-i][0] << " " << vi[-i][1] << "\n";
 		}
 		//vi.back()=vi.front();
@@ -9490,8 +12460,32 @@ namespace xcas {
 	}
       }
       fl_line_width=save_width;
-      return;
     } // End logo mode
+
+    // Show turtle position/cap
+    if (turtleptr &&
+#ifdef TURTLETAB
+	turtle_stack_size &&
+#else
+	!turtleptr->empty() &&
+#endif
+	!(maillage & 0x4)){
+#ifdef TURTLETAB
+      logo_turtle turtle=turtleptr[turtle_stack_size-1];
+#else
+      logo_turtle turtle=turtleptr->back();
+#endif
+      drawRectangle(deltax+horizontal_pixels,deltay,LCD_WIDTH_PX-horizontal_pixels,2*COORD_SIZE,_YELLOW);
+      // drawRectangle(deltax, deltay, LCD_WIDTH_PX, LCD_HEIGHT_PX,COLOR_BLACK);
+      char buf[32];
+      sprintf(buf,"x %i   ",int(turtle.x+.5));
+      text_print(18,buf,deltax+horizontal_pixels,deltay+(2*COORD_SIZE)/3-2,COLOR_BLACK,_YELLOW);
+      sprintf(buf,"y %i   ",int(turtle.y+.5));
+      text_print(18,buf,deltax+horizontal_pixels,deltay+(4*COORD_SIZE)/3-3,COLOR_BLACK,_YELLOW);
+      sprintf(buf,"t %i   ",int(turtle.theta+.5));
+      text_print(18,buf,deltax+horizontal_pixels,deltay+2*COORD_SIZE-4,COLOR_BLACK,_YELLOW);
+    }
+    
   }  
   
   int displaygraph(const giac::gen & ge,const gen & gs,GIAC_CONTEXT){
@@ -9792,6 +12786,33 @@ namespace xcas {
       return g.print();
     return giac::print_DOUBLE_(g._DOUBLE_val,n);
   }
+  const int tracemaxdepth=9; // protection against too many embedded derivatives for curve study
+  // protection against too complex derivatives for curve study
+  int symb_depth(const gen & g,int curdepth,int maxdepth,bool sum=false){
+    if (g.type==_VECT){
+      vecteur & v =*g._VECTptr;
+      int curmax=0;
+      for (int i=0;i<v.size();++i){
+        int cur=symb_depth(v[i],curdepth,maxdepth);
+        if (cur>maxdepth)
+          return curdepth;
+        if (sum){
+          if (cur>curmax)
+            curmax=cur;
+        }
+        else
+          curdepth=cur;
+      }
+      if (sum)
+        curdepth=curmax;
+    }
+    if (g.type!=_SYMB)
+      return curdepth;
+    if (curdepth==maxdepth)
+      return maxdepth+1;
+    return symb_depth(g._SYMBptr->feuille,curdepth+1,maxdepth,g._SYMBptr->sommet==at_plus);
+  }
+
   void Graph2d::tracemode_set(int operation){
     if (plot_instructions.empty())
       plot_instructions=gen2vecteur(g);
@@ -9847,9 +12868,9 @@ namespace xcas {
     G=remove_at_pnt(G);
     tracemode_disp.clear();
     string curve_infos1,curve_infos2;
-    gen parameq,x,y,t,tmin,tmax,tstep;
+    gen parameq,x,y,t,tmin,tmax,tstep,x0g("x0",contextptr),y0g("y0",contextptr),x1g("x1",contextptr),y1g("y1",contextptr),x2g("x2",contextptr);
     // extract position at tracemode_i
-    if (G.is_symb_of_sommet(at_curve)){
+    if (G.is_symb_of_sommet(at_curve)&& symb_depth(G._SYMBptr->feuille[0][0],0,tracemaxdepth)<tracemaxdepth){
       gen c=G._SYMBptr->feuille[0];
       parameq=c[0];
       // simple expand for i*ln(x)
@@ -9862,11 +12883,11 @@ namespace xcas {
       gen x2=derive(x1,t,contextptr);
       gen y1=derive(y,t,contextptr);
       gen y2=derive(y1,t,contextptr);
-      sto(x,gen("x0",contextptr),contextptr);
-      sto(x1,gen("x1",contextptr),contextptr);
-      sto(x2,gen("x2",contextptr),contextptr);
-      sto(y,gen("y0",contextptr),contextptr);
-      sto(y1,gen("y1",contextptr),contextptr);
+      sto(x,x0g,contextptr);
+      sto(x1,x1g,contextptr);
+      sto(x2,x2g,contextptr);
+      sto(y,y0g,contextptr);
+      sto(y1,y1g,contextptr);
       sto(y2,gen("y2",contextptr),contextptr);
       tmin=c[2];
       tmax=c[3];
@@ -9877,13 +12898,32 @@ namespace xcas {
       if (tmax._DOUBLE_val<tracemode_mark)
 	tracemode_mark=tmax._DOUBLE_val;
       G=G._SYMBptr->feuille[1];
-      if (G.type==_VECT){
+      if (G.type==_VECT && !G._VECTptr->empty()){
 	vecteur &Gv=*G._VECTptr;
-	tstep=(tmax-tmin)/(Gv.size()-1);
+        bool doit=false;
+        if (x==t){
+          tmin=re(Gv.front(),contextptr);
+          tmax=re(Gv.back(),contextptr);
+          doit=true;
+        }
+        else if (y==t){
+          tmin=im(Gv.front(),contextptr);
+          tmax=im(Gv.back(),contextptr);
+          doit=true;
+        }
+        else
+          tstep=(tmax-tmin)/(Gv.size()-1);
+        if (doit){
+          tstep=(tmax-tmin)/(Gv.size()-1);
+          if (tracemode_mark<tmin._DOUBLE_val)
+            tracemode_mark=tmin._DOUBLE_val;
+          if (tracemode_mark>tmax._DOUBLE_val)
+            tracemode_mark=tmax._DOUBLE_val;
+        }
       }
       double eps=1e-6; // epsilon(contextptr)
       double curt=(tmin+tracemode_i*tstep)._DOUBLE_val;
-      if (abs(curt-tracemode_mark)<tstep._DOUBLE_val)
+      if (abs(curt-tracemode_mark)<0.999*tstep._DOUBLE_val)
 	curt=tracemode_mark;
       if (operation==-1){
 	gen A,B,C,R; // detect ellipse/hyperbola
@@ -9923,14 +12963,14 @@ namespace xcas {
       if (operation==7)
 	sol=tracemode_mark=curt;
       if (operation==2){ // root near curt
-	sol=newton(y,t,curt,NEWTON_DEFAULT_ITERATION,eps,1e-12,true,tmin._DOUBLE_val,tmax._DOUBLE_val,1,0,1,contextptr);
+	sol=newton(y,t,curt,NEWTON_DEFAULT_ITERATION,eps,1e-12,true,tmin._DOUBLE_val,tmax._DOUBLE_val,tmin._DOUBLE_val,tmax._DOUBLE_val,1,contextptr);
 	if (sol.type==_DOUBLE_){
 	  confirm(lang==1?"Racine en":"Root at",sol.print(contextptr).c_str());
 	  sto(sol,gen("Zero",contextptr),contextptr);
 	}
       }
       if (operation==4){ // horizontal tangent near curt
-	sol=newton(y1,t,curt,NEWTON_DEFAULT_ITERATION,eps,1e-12,true,tmin._DOUBLE_val,tmax._DOUBLE_val,1,0,1,contextptr);
+	sol=newton(y1,t,curt,NEWTON_DEFAULT_ITERATION,eps,1e-12,true,tmin._DOUBLE_val,tmax._DOUBLE_val,tmin._DOUBLE_val,tmax._DOUBLE_val,1,contextptr);
 	if (sol.type==_DOUBLE_){
 	  confirm(lang==1?"y'=0, extremum/pt singulier en":"y'=0, extremum/singular pt at",sol.print(contextptr).c_str());
 	  sto(sol,gen("Extremum",contextptr),contextptr);
@@ -9940,7 +12980,7 @@ namespace xcas {
 	if (x1==1)
 	  do_confirm(lang==1?"Outil pour courbes parametriques!":"Tool for parametric curves!");
 	else {
-	  sol=newton(x1,t,curt,NEWTON_DEFAULT_ITERATION,eps,1e-12,true,tmin._DOUBLE_val,tmax._DOUBLE_val,1,0,1,contextptr);
+	  sol=newton(x1,t,curt,NEWTON_DEFAULT_ITERATION,eps,1e-12,true,tmin._DOUBLE_val,tmax._DOUBLE_val,tmin._DOUBLE_val,tmax._DOUBLE_val,1,contextptr);
 	  if (sol.type==_DOUBLE_){
 	    confirm("x'=0, vertical or singular",sol.print(contextptr).c_str());
 	    sto(sol,gen("Vertical",contextptr),contextptr);
@@ -9948,7 +12988,7 @@ namespace xcas {
 	}
       }
       if (operation==6){ // inflexion
-	sol=newton(x1*y2-x2*y1,t,curt,NEWTON_DEFAULT_ITERATION,eps,1e-12,true,tmin._DOUBLE_val,tmax._DOUBLE_val,1,0,1,contextptr);
+	sol=newton(x1*y2-x2*y1,t,curt,NEWTON_DEFAULT_ITERATION,eps,1e-12,true,tmin._DOUBLE_val,tmax._DOUBLE_val,tmin._DOUBLE_val,tmax._DOUBLE_val,1,contextptr);
 	if (sol.type==_DOUBLE_){
 	  confirm("x'*y''-x''*y'=0",sol.print(contextptr).c_str());
 	  sto(sol,gen("Inflexion",contextptr),contextptr);
@@ -9997,8 +13037,13 @@ namespace xcas {
       }
       G=G._SYMBptr->feuille[0];
     }
+    bool implicit=false;
     if (G.type==_VECT){
       vecteur & v=*G._VECTptr;
+      if (v.size()>16){
+        gen x2(x2g.eval(1,contextptr));
+        implicit=x2.type==_STRNG && *x2._STRNGptr=="implicit";
+      }
       if (operation==-1 && curve_infos1.size()==0){
 	if (v.size()==2)
 	  curve_infos1=_equation(G_orig,contextptr).print(contextptr);
@@ -10070,10 +13115,10 @@ namespace xcas {
         // function curve: set nearest intersection as mark/position
         if (t==x && !is_zero(tstep)){
           gen Ix,Iy;
-          reim(remove_at_pnt(I1),Ix,Iy,contextptr);
-          tracemode_mark=Ix._DOUBLE_val;
-          reim(remove_at_pnt(I2),Ix,Iy,contextptr);
-          tracemode_i=((Ix-tmin)/tstep)._DOUBLE_val;
+	  reim(remove_at_pnt(I1),Ix,Iy,contextptr);
+	  tracemode_mark=evalf_double(Ix,1,contextptr)._DOUBLE_val;
+	  reim(remove_at_pnt(I2),Ix,Iy,contextptr);
+	  tracemode_i=((evalf_double(Ix,1,contextptr)-tmin)/tstep)._DOUBLE_val;
         }
       }
     } // end intersect
@@ -10156,6 +13201,21 @@ namespace xcas {
     tracemode_add="";
     if (Gx.type==_DOUBLE_ && Gy.type==_DOUBLE_){
       tracemode_add += "x="+print_DOUBLE_(Gx._DOUBLE_val,3)+",y="+print_DOUBLE_(Gy._DOUBLE_val,3);
+      if (implicit){
+        sto(Gx,x0g,contextptr);
+        sto(Gy,y0g,contextptr);
+        gen m(gen(makevecteur(x1g,y1g)).eval(1,contextptr));
+        m=subst(m,makevecteur(x__IDNT_e,y__IDNT_e),makevecteur(Gx,Gy),false,contextptr);
+        m=evalf_double(m,1,contextptr);
+        m=_normalize(m,contextptr);
+        gen T(_droite(makesequence(_point(G,contextptr),_point(G+m[0]+cst_i*m[1],contextptr)),contextptr));
+        m=m[1]/m[0];
+        if (m.type==_DOUBLE_){
+          tracemode_add += " ,m="+giac::print_DOUBLE_(m._DOUBLE_val,3);
+          tracemode_disp.push_back(T);
+        }
+      }
+      
       if (tstep!=0){
 	gen curt=tmin+tracemode_i*tstep;
 	if (curt.type==_DOUBLE_){
@@ -11002,6 +14062,24 @@ namespace xcas {
 
   int Graph2d::ui(){
     Graph2d & gr=*this;
+    if (!hp && 
+        gr.symbolic_instructions.size()==1 &&
+        gr.symbolic_instructions.front().is_symb_of_sommet(at_plotfield)){
+      if (newgeo(contextptr)==0){
+        geoptr->hp->filename="ode.py";
+        if (geoptr!=this){
+          geoptr->symbolic_instructions=symbolic_instructions;
+          geoptr->hp->elements.clear();
+          for (int i=0;i<symbolic_instructions.size();++i){
+            geoptr->hp->set_string_value(i,symbolic_instructions[i].print(contextptr));
+          }
+          // switch to geo2d plotfield mode
+          geoptr->set_mode(at_point,at_plotfield,1,"init_cond");
+          geoloop(geoptr);
+          return 0;
+        }
+      }
+    }
     // UI
     int saveprecision=gr.precision;
     gr.precision += 2; // fast draw first
@@ -12027,6 +15105,15 @@ namespace xcas {
     return 0;
   }
 
+  void redisplaylogo(Turtle & t){  // redisplay at full speed 
+    int sp=t.speed;
+    t.speed=0;
+    t.draw();
+    sp=t.speed;
+    DefineStatusMessage((char*)"+-: zoom, pad: move, back: quit", 1, 0, 0);
+    DisplayStatusArea();
+  }
+
   int displaylogo(){
 #ifdef TURTLETAB
     xcas::Turtle t={tablogo,0,0,1,1,(short) turtle_speed};
@@ -12058,18 +15145,18 @@ namespace xcas {
 	return key;
       if (key==KEY_CTRL_EXIT || key==KEY_CTRL_OK || key==KEY_PRGM_ACON || key==KEY_CTRL_MENU || key==KEY_CTRL_EXE || key==KEY_CTRL_VARS || key==KEY_CHAR_ANS)
 	break;
-      if (key==KEY_CTRL_UP){ t.turtley += 10; redraw=true; }
-      if (key==KEY_CTRL_PAGEUP) { t.turtley += 100; redraw=true;}
-      if (key==KEY_CTRL_DOWN) { t.turtley -= 10; redraw=true;}
-      if (key==KEY_CTRL_PAGEDOWN) { t.turtley -= 100;redraw=true;}
-      if (key==KEY_CTRL_LEFT) { t.turtlex -= 10; redraw=true;}
-      if (key==KEY_SHIFT_LEFT) { t.turtlex -= 100; redraw=true;}
-      if (key==KEY_CTRL_RIGHT) { t.turtlex += 10; redraw=true;}
-      if (key==KEY_SHIFT_RIGHT) { t.turtlex += 100;redraw=true;}
-      if (key==KEY_CHAR_PLUS) { t.turtlezoom *= 2;redraw=true;}
-      if (key==KEY_CHAR_MINUS){ t.turtlezoom /= 2; redraw=true; }
-      if (key==KEY_CHAR_MULT){ if (t.speed) t.speed *=2; else t.speed=10; redraw=true; }
-      if (key==KEY_CHAR_DIV){ t.speed /=2; redraw=true; }
+      if (key==KEY_CTRL_UP){ t.turtley += 10; redisplaylogo(t); }
+      if (key==KEY_CTRL_PAGEUP) { t.turtley += 100; redisplaylogo(t);}
+      if (key==KEY_CTRL_DOWN) { t.turtley -= 10; redisplaylogo(t);}
+      if (key==KEY_CTRL_PAGEDOWN) { t.turtley -= 100;redisplaylogo(t);}
+      if (key==KEY_CTRL_LEFT) { t.turtlex -= 10; redisplaylogo(t);}
+      if (key==KEY_SHIFT_LEFT) { t.turtlex -= 100; redisplaylogo(t);}
+      if (key==KEY_CTRL_RIGHT) { t.turtlex += 10; redisplaylogo(t);}
+      if (key==KEY_SHIFT_RIGHT) { t.turtlex += 100;redisplaylogo(t);}
+      if (key==KEY_CHAR_PLUS) { t.turtlezoom *= 2;redisplaylogo(t);}
+      if (key==KEY_CHAR_MINUS){ t.turtlezoom /= 2; redisplaylogo(t); }
+      if (key==KEY_CHAR_MULT){  if (t.speed<10) t.speed++; else t.speed=10; redraw=true; }
+      if (key==KEY_CHAR_DIV){ if (t.speed>0) t.speed--;  redraw=true; }
       if (key=='='){ redraw=true; }
     }
     os_hide_graph();
@@ -12170,21 +15257,21 @@ namespace xcas {
       gen value;
       if (listormat) // select line l, col c
 	xcas::eqw_select(eq.data,line,col,true,value);
+#define EQW_TAILLE 54
       if (eqdata.dx>LCD_WIDTH_PX){
-	if (dx<-20)
-	  dx=-20;
-	if (dx>eqdata.dx-LCD_WIDTH_PX+20)
-	  dx=eqdata.dx-LCD_WIDTH_PX+20;
+	if (dx<-EQW_TAILLE)
+	  dx=-EQW_TAILLE;
+	if (dx>eqdata.dx-LCD_WIDTH_PX+EQW_TAILLE)
+	  dx=eqdata.dx-LCD_WIDTH_PX+EQW_TAILLE;
       }
-#define EQW_TAILLE 18
-      if (eqdata.dy>LCD_HEIGHT_PX-2*EQW_TAILLE){
-	if (dy-eqdata.y<LCD_HEIGHT_PX-2*EQW_TAILLE)
-	  dy=eqdata.y+LCD_HEIGHT_PX-2*EQW_TAILLE;
-	if (dy-eqdata.y>eqdata.dy+32)
-	  dy=eqdata.y+eqdata.dy+32;
+      if (eqdata.dy>LCD_HEIGHT_PX-EQW_TAILLE){
+	if (dy-eqdata.y<LCD_HEIGHT_PX-EQW_TAILLE)
+	  dy=eqdata.y+LCD_HEIGHT_PX-EQW_TAILLE;
+	if (dy-eqdata.y>eqdata.dy+EQW_TAILLE)
+	  dy=eqdata.y+eqdata.dy+EQW_TAILLE;
       }
       waitforvblank();
-      drawRectangle(0, 0, LCD_WIDTH_PX, 205,COLOR_WHITE);
+      drawRectangle(0, STATUS_AREA_PX, LCD_WIDTH_PX, LCD_HEIGHT_PX-STATUS_AREA_PX,COLOR_WHITE);
       // Bdisp_AllClr_VRAM();
       int save_clip_ymin=clip_ymin;
       clip_ymin=STATUS_AREA_PX;
@@ -12201,12 +15288,12 @@ namespace xcas {
       menu += string(menu_f2);
 #ifdef HP39
       menu += "| undo| edit| +- | approx";
-      drawRectangle(0,114,LCD_WIDTH_PX,14,giac::_BLACK);
+      drawRectangle(0,114,LCD_WIDTH_PX,14,SDK_BLACK);
       PrintMini(0,114,menu.c_str(),4);
 #else
       menu += "|3 undo|4 edt|5 +-|6 approx";
       drawRectangle(0,205,LCD_WIDTH_PX,17,22222);
-      PrintMiniMini(0,205,menu.c_str(),0,giac::_BLACK,22222);
+      PrintMiniMini(0,205,menu.c_str(),0,SDK_BLACK,22222);
 #endif
       //draw_menu(2);
       clip_ymin=save_clip_ymin;
@@ -12324,7 +15411,7 @@ namespace xcas {
       if (key==KEY_CTRL_CLIP){
 	xcas::Equation_adjust_xy(eq.data,xleft,ytop,xright,ybottom,gsel,gselparent,gselpos,0);
 	if (gsel==0)
-	  gsel==&eq.data;
+	  gsel=&eq.data;
 	// cout << "var " << g << " " << eq.data << "\n";
 	if (xcas::do_select(*gsel,true,value) && value.type==_EQW){
 	  //cout << g << ":=" << value._EQWptr->g << "\n";
@@ -12350,7 +15437,7 @@ namespace xcas {
 	    vector<int> goto_sel;
 	    xcas::Equation_adjust_xy(eq.data,xleft,ytop,xright,ybottom,gsel,gselparent,gselpos,&goto_sel);
 	    if (gsel==0)
-	      gsel==&eq.data;
+	      gsel=&eq.data;
 	    // cout << "var " << g << " " << eq.data << "\n";
 	    if (xcas::do_select(*gsel,true,value) && value.type==_EQW){
 	      //cout << g << ":=" << value._EQWptr->g << "\n";
@@ -12601,6 +15688,8 @@ namespace xcas {
 	    if (doit)
 	      dy += value._EQWptr->dy+eq.attr.fontsize/2;
 	  }
+          else
+            dy += eq.attr.fontsize/2;
 	  continue;
 	}
 	if (key==KEY_CTRL_PAGEUP && doit){
@@ -12611,6 +15700,8 @@ namespace xcas {
 	  if (line<nlines-1 && col>=0 && xcas::eqw_select(eq.data,line,col,false,value)){
 	    if (doit)
 	      dy -= value._EQWptr->dy+eq.attr.fontsize/2;
+            else
+              dy -= eq.attr.fontsize/2;
 	    ++line;
 	    xcas::eqw_select(eq.data,line,col,true,value);
 	  }
@@ -13264,7 +16355,7 @@ namespace xcas {
     duration=h+m/100.0;
     return ch;
   }
-  const char conf_standard[] = "F1 algb\nsimplify(\nfactor(\npartfrac(\ntcollect(\ntexpand(\nsum(\noo\nproduct(\nF2 calc\n'\ndiff(\nintegrate(\nlimit(\nseries(\nsolve(\ndesolve(\nrsolve(\nF5  2d \nreserved\nF4 menu\nreserved\nF6 reg\nlinear_regression_plot(\nlogarithmic_regression_plot(\nexponential_regression_plot(\npower_regression_plot(\npolynomial_regression_plot(\nsin_regression_plot(\nscatterplot(\nmatrix(\nF< poly\nproot(\npcoeff(\nquo(\nrem(\ngcd(\negcd(\nresultant(\nGF(\nF9 arit\n mod \nirem(\nifactor(\ngcd(\nisprime(\nnextprime(\npowmod(\niegcd(\nF7 lin\nmatrix(\ndet(\nmatpow(\nranm(\nrref(\ntran(\negvl(\negv(\nF= list\nmakelist(\nrange(\nseq(\nlen(\nappend(\nranv(\nsort(\napply(\nF3 plot\nplot(\nplotseq(\nplotlist(\nplotparam(\nplotpolar(\nplotfield(\nhistogram(\nbarplot(\nF; real\nexact(\napprox(\nfloor(\nceil(\nround(\nsign(\nmax(\nmin(\nF> prog\n:\n&\n#\nhexprint(\nbinprint(\nf(x):=\ndebug(\npython(\nF8 cplx\nabs(\narg(\nre(\nim(\nconj(\ncsolve(\ncfactor(\ncpartfrac(\nF: misc\n!\nrand(\nbinomial(\nnormald(\nexponentiald(\n and \n or \nperiodic_table\nF? geo\npoint(\nline(\ncircle(\nplane(\nF@ color\ncolor=\nred\ncyan\ngreen\nblue\nmagenta\nyellow\n";
+  const char conf_standard[] = "F1 algb\nsimplify(\nfactor(\npartfrac(\ntcollect(\ntexpand(\nsum(\noo\nproduct(\nF2 calc\n'\ndiff(\nintegrate(\nlimit(\nseries(\nsolve(\ndesolve(\nrsolve(\nF3 plot\nplot(\nplotseq(\nplotlist(\nplotparam(\nplotpolar(\nplotfield(\nhistogram(\nbarplot(\nF4 menu\nreserved\nF5  2d \nreserved\nF6 reg\nlinear_regression_plot(\nlogarithmic_regression_plot(\nexponential_regression_plot(\npower_regression_plot(\npolynomial_regression_plot(\nsin_regression_plot(\nscatterplot(\nmatrix(\nF7 lin\nmatrix(\ndet(\nmatpow(\nranm(\nrref(\ntran(\negvl(\negv(\nF8 cplx\nabs(\narg(\nre(\nim(\nconj(\ncsolve(\ncfactor(\ncpartfrac(\nF9 arit\n mod \nirem(\nifactor(\ngcd(\nisprime(\nnextprime(\npowmod(\niegcd(\nF; real\nexact(\napprox(\nfloor(\nceil(\nround(\nsign(\nmax(\nmin(\nF< poly\nproot(\npcoeff(\nquo(\nrem(\ngcd(\negcd(\nresultant(\nGF(\nF= list\nmakelist(\nrange(\nseq(\nlen(\nappend(\nranv(\nsort(\napply(\nF> prog\n:\n&\n#\nhexprint(\nbinprint(\nf(x):=\ndebug(\npython(\nF? color\ndisplay=\nfilled\nred\ncyan\ngreen\nblue\nmagenta\nyellow\nFA misc\n!\nrand(\nbinomial(\nnormald(\nexponentiald(\n and \n or \nperiodic_table\nFB geo\npoint(\nline(\ncircle(\nplane(\n";
 
   const char python_conf_standard[] = "F1 misc\nprint(\ninput(\n;\n:\n[]\ndef f(x): return \ntime()\nfrom time import *\nF2 math\nfloor(\nceil(\nround(\nmin(\nmax(\nabs(\nsqrt(\nfrom math import *\nF3 c&rand\nrandint(\nrandom()\nchoice(\nfrom random import *\n.real\n.imag\nphase(\nfrom cmath import *;i=1j\nF4 menu\nreserved\nF5  2d\nreserved\nF6 tortue\nforward(\nbackward(\nleft(\nright(\npencolor(\ncircle(\nreset()\nfrom turtle import *\nF7 linalg\nmatrix(\nadd(\nsub(\nmul(\ninv(\nrref(\ntranspose(\nfrom linalg import *;i=1j\nF8 numpy\narray(\nreshape(\narange(\nlinspace(\nsolve(\neig(\ninv(\nfrom numpy import *;i=1j\nF9 arit\npow(\nisprime(\nnextprime(\nifactor(\ngcd(\nlcm(\niegcd(\nfrom arit import *\nF< color\nred\nblue\ngreen\ncyan\nyellow\nmagenta\nblack\nwhite\nF; draw\nclear_screen();\nshow_screen();\nset_pixel(\ndraw_line(\ndraw_rectangle(\n\ndraw_circle(\ndraw_string(\nfrom graphic import *\nF: plot\nclf()\nplot(\ntext(\narrow(\nscatter(\nbar(\nshow()\nfrom matplotl import *\nF= list\nlist(\nrange(\nlen(\nappend(\nzip(\nsorted(\nmap(\nreversed(\nF> prog\n|\n&\n#\nhex(\nbin(\ndebug(\nfrom cas import *\ncaseval(\"\")\n";
   
@@ -14005,7 +17096,7 @@ namespace xcas {
       if (minimini || color == 2016 || color == 4) // comment in small font
         PrintMiniMini(X, Y, buf, revert ? 4 : 0,COLOR_BLACK,COLOR_WHITE);
       else {
-        PrintMini(X, Y, buf, revert ? 4 : 0,COLOR_BLACK,COLOR_WHITE);
+        PrintMini7(X, Y, buf, revert ? 4 : 0,COLOR_BLACK,COLOR_WHITE,false);
         // overline/underline style according to color
         if (!revert){
           if (color == 3){ 
@@ -14034,7 +17125,7 @@ namespace xcas {
     if(minimini) 
       X=PrintMiniMini(X, Y, buf, revert?4:0, color, COLOR_WHITE,fake);
     else
-      X=PrintMini(X, Y, buf, revert?4:0, color, COLOR_WHITE, fake);
+      X=PrintMini7(X, Y, buf, revert?4:0, color, COLOR_WHITE, fake);
 #ifdef BW
     if (!revert){
       int dy=15;
@@ -14543,7 +17634,7 @@ int strncasecmp(const char *s1, const char *s2, size_t n) {
 
 void draw_editor_menu(bool textgr,bool textpython){
 #ifdef HP39
-    drawRectangle(0,114,LCD_WIDTH_PX,14,giac::_BLACK);
+    drawRectangle(0,114,LCD_WIDTH_PX,14,SDK_BLACK);
     if (textgr)
       PrintMini(0,114,"pnts | lines| undo| cmds| A<>a | File",4);
     else
@@ -14552,7 +17643,7 @@ void draw_editor_menu(bool textgr,bool textpython){
     waitforvblank();
     drawRectangle(0,205,LCD_WIDTH_PX,17,44444);
     if (textgr)
-      PrintMiniMini(0,205,"shift-1 pnts|2 lines|3 undo|4 disp|5 +-|6 curves|7 triangle|8 polygon|9 solid",4,giac::_CYAN,giac::_BLACK);
+      PrintMiniMini(0,205,"shift-1 pnts|2 lines|3 undo|4 disp|5 +-|6 curves|7 triangle|8 polygon|9 solid",4,giac::_CYAN,SDK_BLACK);
     else
       PrintMiniMini(0,205,
 #if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
@@ -14560,7 +17651,7 @@ void draw_editor_menu(bool textgr,bool textpython){
 #else
                     textpython>0?"shift-1 test|2 loop|3 undo|4 misc|5 +-|6 logo|7 lin|8 list|9arit":"shift-1 test|2 loop|3 undo|4 misc|5 +-|6 logo|7 matr|8 cplx",
 #endif
-                    4,44444,giac::_BLACK);
+                    4,44444,SDK_BLACK);
     //draw_menu(1);
 #endif
   }
@@ -15203,7 +18294,7 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
 	print(temptextX,temptextY,singleword,couleur,false,/*fake*/true,minimini);
 	if(temptextX<text->width && temptextX + textX > text->width-6) {
 	  if (editable)
-	    textX=PrintMini(textX, textY, ">", 4, COLOR_MAGENTA, COLOR_WHITE);	  
+	    textX=PrintMini7(textX, textY, ">", 4, COLOR_MAGENTA, COLOR_WHITE,false); 
 	  //time for a new line
 	  textX=text->x+deltax;
 	  textY=textY+text->lineHeight+v[cur].lineSpacing;
@@ -15370,7 +18461,9 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
   void save_script(const char * filename,const string & s){
     if (nspire_exam_mode==2)
       return;
+    int l=s.size()+1;
 #ifdef NUMWORKS
+    ++l;
     char buf[s.size()+2];
     buf[0]=1;
     strcpy(buf+1,s.c_str());
@@ -15381,12 +18474,12 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
 #ifdef NSPIRE_NEWLIB
     char filenametns[strlen(filename)+5];
     strcpy(filenametns,filename);
-    int l=strlen(filenametns);
+    l=strlen(filenametns);
     if (l<4 || strncmp(filename+l-4,".tns",4))
       strcpy(filenametns+strlen(filename),".tns");
-    write_file(filenametns,buf);
+    write_file(filenametns,buf,l);
 #else
-    write_file(filename,buf);
+    write_file(filename,buf,l);
 #endif
   }
 
@@ -15762,7 +18855,7 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
       if (key==KEY_CTRL_F3) // Numworks has no UNDO key
 	key=KEY_CTRL_UNDO;
 #if 1
-      if (key == KEY_CTRL_SETUP) {
+      if (key == KEY_CTRL_SETUP && editable) {
 	menu_setup(contextptr);
 	continue;
       }
@@ -15781,7 +18874,7 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
       int & textpos=text->pos;
       if (key==KEY_CTRL_CUT && clipline<0) // if no selection, CUT -> pixel menu
 	key=KEY_CTRL_F3;
-      if (!editable && (key==KEY_CHAR_ANS || key==KEY_BOOK || key=='\t' || key==KEY_CTRL_EXE))
+      if (!editable && (key==KEY_CHAR_ANS || key==KEY_BOOK || key=='\t' || key==KEY_CTRL_EXE || key==KEY_CHAR_EXPN10 || key==KEY_CTRL_SETUP))
 	return key;
       if (editable){
 	if (key=='\t'){
@@ -16228,7 +19321,7 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
 	  }
 	  smallmenuitems[8].text = (char *)((lang==1)?"Changer taille caracteres":"Change fontsize");
 	  smallmenuitems[9].text = (char *)aide_khicas_string;
-	  smallmenuitems[10].text = (char *)((lang==1)?"A propos":"About");
+          smallmenuitems[10].text = (char*) ((lang==1)?"A propos":"About");
 	  smallmenuitems[11].text = (char*)((lang==1)?"Quitter":"Quit");
 	  int sres = doMenu(&smallmenu);
 	  if(sres == MENU_RETURN_SELECTION || sres==KEY_CTRL_EXE) {
@@ -16244,7 +19337,15 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
 	      text.editable=false;
 	      text.clipline=-1;
 	      text.title = smallmenuitems[sres-1].text;
-	      add(&text,smallmenu.selection==10?((lang==1)?shortcuts_fr_string:shortcuts_en_string):((lang==1)?apropos_fr_string:apropos_en_string));
+	      add(&text,smallmenu.selection==10?
+#ifdef QRHELP
+                  ((lang==1)?shortcuts_fr_string:shortcuts_en_string):
+                  ((lang==1)?apropos_fr_string:apropos_en_string)
+#else
+                  shortcuts_en_string:
+                  apropos_en_string
+#endif
+                  );
 	      if (doTextArea(&text,contextptr)==KEY_SHUTDOWN)
 		return KEY_SHUTDOWN;
 	      continue;
@@ -16443,7 +19544,7 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
   }  
 
   console_line * Line=0;//[_LINE_MAX];//={data_line};
-  char menu_f1[8]={0},menu_f2[8]={0},menu_f3[8]={0},menu_f4[8]={0},menu_f5[8]={0},menu_f6[8];
+  char menu_f1[8]={32,0},menu_f2[8]={32,0},menu_f3[8]={32,0},menu_f4[8]={32,0},menu_f5[8]={32,0},menu_f6[8]={32,0};
   char session_filename[MAX_FILENAME_SIZE+1]="session";
   char * FMenu_entries_name[6]={menu_f1,menu_f2,menu_f3,menu_f4,menu_f5,menu_f6};
   location Cursor;
@@ -17189,7 +20290,15 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
 	  text.editable=false;
 	  text.clipline=-1;
 	  text.title = smallmenuitems[smallmenu.selection-1].text;
-	  add(&text,smallmenu.selection==10?((lang==1)?shortcuts_fr_string:shortcuts_en_string):((lang==1)?apropos_fr_string:apropos_en_string));
+	  add(&text,smallmenu.selection==10?
+#ifdef QRHELP
+              ((lang==1)?shortcuts_fr_string:shortcuts_en_string):
+              ((lang==1)?apropos_fr_string:apropos_en_string)
+#else
+              shortcuts_en_string:
+              apropos_en_string
+#endif
+              );
 	  if (doTextArea(&text,contextptr)==KEY_SHUTDOWN)
 	    return ;
 	  continue;
@@ -17199,13 +20308,19 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
   }
 
   void * console_malloc(unsigned s){
+#ifdef SDL_KHICAS
+    return malloc(s);
+#else
     return new char [s];
-    // return malloc(s);
+#endif
   }
 
   void console_free(void * ptr){
+#ifdef SDL_KHICAS
+    free(ptr);
+#else
     delete [] (char *) ptr;
-    // free(ptr);
+#endif
   }
 
   void cleanup(std::string & s){
@@ -17271,7 +20386,7 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
       return 0;
     }
     if (xcas_python_eval==1){
-      freezeturtle=false;
+      nws_freezeturtle=freezeturtle=false;
       micropy_ck_eval(s);
     }
     else 
@@ -17333,6 +20448,9 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
   }
 
   int run_session(int start,GIAC_CONTEXT){
+#ifdef MICROPY_LIB
+    micropy_ck_eval("1"); // insure initialization
+#endif
     std::vector<std::string> v;
     for (int i=start;i<Last_Line;++i){
       if (Line[i].type==LINE_TYPE_INPUT)
@@ -17498,11 +20616,41 @@ static void display(textArea *text, int &isFirstDraw, int &totalTextY, int &scro
     buf += 2;
   }
 
+static void qrlicense(bool force){
+  static bool done=false;
+  if (!force && done) return;
+  done=true;
+  c_fill_rect(0,0,LCD_WIDTH_PX,LCD_HEIGHT_PX,0xffffff);
+  DefineStatusMessage("QRCode Generator (c). Press any key",0,0,0);
+  int y=18,dy=16;
+  os_draw_string_small(0,y,0,0xffff,"Copyright 2024 Project Nayuki. (MIT License)    ",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"/www.nayuki.io/page/qr-code-generator-library",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"Permission is hereby granted, free of charge",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"to any person obtaining a copy of this software and",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"associated documentation files (the 'Software')",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"to deal in the Software without restriction,",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"including without limitation the rights to use, copy,",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"modify, merge, publish, distribute, sublicense, ",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"and/or sell copies of the Software and to permit",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"persons to whom Software is furnished to do so",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"subject to conditions. The Software is provided",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"'as is', without warranty of any kind...",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"The above copyright and this permission notice shall",false); y+=dy;
+  os_draw_string_small(0,y,0,0xffff,"be included in all copies or substantial portions...",false); y+=dy;
+  int key; GetKey(&key);
+}  
+
+
 // QR code 
-static void do_QRdisp(const uint8_t qrcode[]) {
+static void do_QRdisp(const uint8_t qrcode[],const char * msg) {
   drawRectangle(0,0,LCD_WIDTH_PX,LCD_HEIGHT_PX,0xffff);
   int x=0,y=180;
-  os_draw_string_small(0,205,0,0xffff,"QR Code generator (c) Project Nayuki.");
+  os_draw_string_medium(210,60,0,0xffff,"OK: quit");
+  os_draw_string_small(210,100,0,0xffff,"QRCode generator");
+  os_draw_string_small(210,115,0,0xffff,"(c) Project");
+  os_draw_string_small(210,130,0,0xffff,"Nayuki");
+  //"OK quit. QRCode generator (c) Project Nayuki.");
+  os_draw_string_medium(0,202,0,0xffff,msg);
   int size = qrcodegen_getSize(qrcode);
   int border = 0;
   int sb=size+border;
@@ -17510,7 +20658,7 @@ static void do_QRdisp(const uint8_t qrcode[]) {
 #ifdef FXCG
   int dx=34, dy=7;
 #else
-  int dx=34, dy=20;
+  int dx=15, dy=15;
 #endif
   // confirm("sb",giac::print_INT_(sb).c_str());
   if (scale){
@@ -17520,14 +20668,9 @@ static void do_QRdisp(const uint8_t qrcode[]) {
       }
     }
   }
-  while (1) {
-    int key; ck_getkey(&key);
-    if (key==KEY_CTRL_OK || key==KEY_CTRL_EXIT)
-      break;
-  }
 }
 
-bool QRdisp(const char * text){
+bool QRdisp(const char * text,const char *msg){
   // confirm("qrdisp",text);
   enum qrcodegen_Ecc errCorLvl = qrcodegen_Ecc_LOW;  // Error correction level
   
@@ -17536,8 +20679,14 @@ bool QRdisp(const char * text){
   uint8_t tempBuffer[qrcodegen_BUFFER_LEN_MAX];
   bool ok = qrcodegen_encodeText(text, tempBuffer, qrcode, errCorLvl,
                                  qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO, true);
-  if (ok)
-    do_QRdisp(qrcode);
+  if (ok){
+    while (1) {
+      do_QRdisp(qrcode,msg);
+      int key; ck_getkey(&key);
+      if (key==KEY_CTRL_OK || key==KEY_CTRL_EXIT)
+	break;
+    }
+  }
   return ok;
 }
 
@@ -17594,7 +20743,9 @@ void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONT
     Bfile_WriteFile_OS(hFile, script.c_str(), scriptsize);
     // save console state
     int pos=1;
-    string qrs=lang?"https://www-fourier.univ-grenoble-alpes.fr/~parisse/xcasfr.html#":"https://www-fourier.univ-grenoble-alpes.fr/~parisse/xcasen.html#";//"https://xcas.univ-grenoble-alpes.fr/xcasjs/#";
+    // string qrs=lang?"https://www-fourier.univ-grenoble-alpes.fr/~parisse/xcasfr.html#":"https://www-fourier.univ-grenoble-alpes.fr/~parisse/xcasen.html#";//"https://xcas.univ-grenoble-alpes.fr/xcasjs/#";
+    string qrs=fourier_url;
+    qrs += "kcasfr.html#";
     qrs += "filename=";
     qrs += filename;
     qrs += '&';
@@ -17630,11 +20781,11 @@ void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONT
       }
       Bfile_WriteFile_OS(hFile, buf, l);
     }
-    if (qr) QRdisp(qrs.c_str());
+    if (qr) QRdisp(qrs.c_str(),"Flash me to clone your session");
     char BUF[2]={0,0};
     Bfile_WriteFile_OS(hFile, BUF, sizeof(BUF));
 #ifdef NUMWORKS
-    savebuf[0]=1;
+    savebuf[0]=0;
 #endif
     int len=hFile-savebuf;
     if (
@@ -17651,7 +20802,7 @@ void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONT
       int newlen=4*(len+2)/3+11; // 4/3 oldlen + 8(#swaspy\n) +1 + 2 for ending  zeros
       char newbuf[newlen];
       strcpy(newbuf,"##xwaspy\n");
-      newbuf[0]=1;
+      newbuf[0]=0;
       hFile=newbuf+9;
 #else
       char * buf=savebuf;
@@ -17689,6 +20840,224 @@ void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONT
     }
   }
 
+int char2int(char c){
+  if (c>='0' && c<='9')
+    return c-'0';
+  if (c>='A' && c<='F')
+    return c-'A'+10;
+  if (c>='a' && c<='f')
+    return c-'a'+10;
+  return -1;
+}
+
+  extern "C" int save_link(const char * s,const char * filename,int mode);
+
+  // convert URL link to xw or xw.py session
+  // mode==0 save only link.nws, mode==1 save as xw session
+  int save_link(const char * s,const char * filename,int mode){
+    string Filename(filename);
+    int xcas_mode=0;
+    vector<string> Line; vector<unsigned char> Type;
+    string script,state;
+    // parse s to script,state, Line and Type
+    for (;*s;++s){
+      if (*s=='&')
+	break;
+    }
+    if (!*s) // no & found
+      return -1;
+    for (;*s;){
+      string cur;
+      for (++s;*s;++s){
+	if (*s=='&')
+	  break;
+	if (*s=='%' && s[1] && s[2]){
+	  int c1=char2int(s[1]),c2=char2int(s[2]);
+	  if (c1<0 || c2<0)
+	    return -2;
+	  cur += c1*16+c2;
+          s+=2;
+	}
+	else
+	  cur += *s;
+      }
+      int pos=cur.find('=');
+      if (pos<0 || pos>=cur.size())
+	continue; // ignored
+      string cmd=cur.substr(0,pos);
+      string value=cur.substr(pos+1,cur.size()-pos-1);
+      if (cmd=="filename"){
+        if (value[0]=='@')
+          value=value.substr(1,value.size()-1);
+        if (value.size()<4 || value.substr(3,value.size()-3)!=".xw")
+          value += ".xw";
+	Filename=value;
+	continue;
+      }
+      if (cmd=="radian"){
+	state += "angle_radian:="+value+";";
+	continue;
+      }
+      if (cmd=="python"){
+	state += "python_mode("+value+");";
+	continue;
+      }
+      if (cmd=="xcas" || cmd=="cas" || cmd=="py" || cmd=="micropy"){
+	// skip position x,y,
+	pos=0;
+	for (;pos<value.size();++pos){
+	  if (value[pos]==',')
+	    break;
+	}
+	for (++pos;pos<value.size();++pos){
+	  if (value[pos]==',')
+	    break;
+	}
+	++pos;
+	value=value.substr(pos,value.size()-pos);
+	if (value.size()==0)
+	  continue;
+	if ( (cmd=="xcas" || cmd=="cas") && xcas_mode!=0){
+	  Line.push_back("xcas");
+	  Type.push_back(0);
+	  xcas_mode=0;
+	}
+	if ((cmd=="py" || cmd=="micropy") && xcas_mode==0){
+	  Line.push_back("python");
+	  Type.push_back(0);
+	  xcas_mode=4;
+	}
+	pos=value.find('\n');
+	if (pos>=0 && pos<value.size())
+	  script += value + "\n\n";
+	else {
+	  Line.push_back(value);
+	  Type.push_back(0);
+	}
+	continue;
+      }
+    }
+    int statesize=state.size(),scriptsize=script.size();
+    //
+    int size=2*sizeof(int)+statesize+scriptsize;
+    int n=Line.size(); // number of cmdlines in s
+    for (int i=0;i<n;++i){
+      size += 2*sizeof(short)+2*sizeof(char)+Line[i].size()+1;
+    }
+    char savebuf[size+4];
+#ifdef NUMWORKS
+    char * hFile=savebuf+1;
+#else
+    char * hFile=savebuf;
+#endif
+    // save variables and modes
+    Bfile_WriteFile_OS4(hFile, statesize);
+    Bfile_WriteFile_OS(hFile, state.c_str(), statesize);
+    // save script
+    Bfile_WriteFile_OS4(hFile, scriptsize);
+    Bfile_WriteFile_OS(hFile, script.c_str(), scriptsize);
+    // save console state
+    int pos=1;
+    // save console state
+    for (int i=0;i<n;++i){
+      const char * cur=Line[i].c_str();
+      unsigned short l=strlen(cur);
+      Bfile_WriteFile_OS2(hFile, l);
+      unsigned short s=0; // cursor position
+      Bfile_WriteFile_OS2(hFile, s);
+      unsigned char c=Type[i]; // cur.type;
+      Bfile_WriteFile_OS(hFile, &c, sizeof(c));
+      c=1;//cur.readonly;
+      Bfile_WriteFile_OS(hFile, &c, sizeof(c));
+      unsigned char buf[l+1];
+      buf[l]=0;
+      strcpy((char *)buf,(const char*)cur); 
+      unsigned char *ptr=buf,*strend=ptr+l;
+      for (;ptr<strend;++ptr){
+        if (*ptr==0x9c)
+          *ptr='\n';
+      }
+      Bfile_WriteFile_OS(hFile, buf, l);
+    }
+    char BUF[2]={0,0};
+    Bfile_WriteFile_OS(hFile, BUF, sizeof(BUF));
+#ifdef NUMWORKS
+    savebuf[0]=1;
+#endif
+    int len=hFile-savebuf;
+    if (
+#ifdef XWASPY
+        len<8192
+#else
+        0
+#endif
+        ){
+      // save as an ascii file beginning with #xwaspy
+#ifdef NUMWORKS 
+      --len;
+      char * buf=savebuf+1;
+      int newlen=4*(len+2)/3+11; // 4/3 oldlen + 8(#swaspy\n) +1 + 2 for ending  zeros
+      char tmpbuf[]={(char)0xBA,(char)0xDD,(char)0x0B,(char)0xEE,0,0,'l','i','n','k','.','p','y',0};
+      char newbuf_[newlen+17];
+      memcpy(newbuf_,tmpbuf,sizeof(tmpbuf));
+      char * newbuf=newbuf_+14;
+      strcpy(newbuf,"##xwaspy\n");
+      newbuf[0]=1;
+      hFile=newbuf+9;
+#else
+      char * buf=savebuf;
+      int newlen=4*(len+2)/3+10;
+      char newbuf[newlen];
+      strcpy(newbuf,"#xwaspy\n");
+      hFile=newbuf+8;
+#endif
+      for (int i=0;i<len;i+=3,hFile+=4){
+        // keep space \n and a..z chars
+        char c;
+        while (i<len && ((c=buf[i])==' ' || c=='\n' || c=='{' || c==')' || c==';' || c==':' || c=='\n' || (c>='a' && c<='z')) ){
+          if (c==')')
+            c='}';
+          if (c==':')
+            c='~';
+          if (c==';')
+            c='|';
+          *hFile=c;
+          ++hFile;
+          ++i;
+        }
+        unsigned char a=buf[i],b=i+1<len?buf[i+1]:0,C=i+2<len?buf[i+2]:0;
+        hFile[0]=xwaspy_shift+(a>>2);
+        hFile[1]=xwaspy_shift+(((a&3)<<4)|(b>>4));
+        hFile[2]=xwaspy_shift+(((b&0xf)<<2)|(C>>6));
+        hFile[3]=xwaspy_shift+(C&0x3f);
+      }
+      //*hFile=0; ++hFile; 
+      //*hFile=0; ++hFile;      
+      int totalsize=hFile-newbuf;
+      if (mode==1 && filename!=Filename)
+        write_file(filename,newbuf,totalsize);
+#ifdef NUMWORKS 
+      // create link.nws
+      // header BA DD 0B EE, length 2 bytes then content then 00 00
+      newbuf_[5]=(totalsize+11)/256;
+      newbuf_[4]=(totalsize+11)%256;
+#endif
+      hFile[0]=0; hFile[1]=0; hFile[2]=0;
+#ifdef NUMWORKS 
+      if (mode==1)
+        write_file(Filename.c_str(),newbuf,totalsize);
+      return write_file("link.nws",newbuf_,totalsize+17);
+#else
+      write_file(Filename.c_str(),newbuf,totalsize);
+#endif
+    }
+    else {
+      if (filename!=Filename)
+        write_file(filename,savebuf,len);
+      return write_file(Filename.c_str(),savebuf,len);
+    }
+  }
+
   size_t Bfile_ReadFile_OS4(const char * & hf_){
     const unsigned char * hf=(const unsigned char *)hf_;
     size_t n=(((((hf[0]<<8)+hf[1])<<8)+hf[2])<<8)+hf[3];
@@ -17715,7 +21084,8 @@ void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONT
     // if (strcmp(filename,"session.xw")){ console_output(hf,8); return true; }
     if (!hf) return false;
     string str;
-    if (strncmp(hf,"#xwaspy\n",8)==0){
+    bool xwaspy=strncmp(hf,"#xwaspy\n",8)==0;
+    if (xwaspy){
       hf+=8;
       const char * source=hf;
       for (;*source;source+=4){
@@ -17754,48 +21124,55 @@ void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONT
     dconsole_mode=1;
     // read script
     L=Bfile_ReadFile_OS4(hf);
-    if (L>0){
-      char bufscript[L+1];
+    char bufscript[L+1];
+    if (L>0)
       Bfile_ReadFile_OS(hf,bufscript,L);
-      bufscript[L]=0;
-      if (edptr==0)
-	edptr=new textArea;
-      if (edptr){
-	edptr->elements.clear();
-	edptr->clipline=-1;
-	edptr->filename=remove_path(giac::remove_extension(filename))+".py";
-	//cout << "script " << edptr->filename << "\n";
-	edptr->editable=true;
-	edptr->changed=false;
-	edptr->python=python_compat(contextptr);
-	edptr->elements.clear();
+    bufscript[L]=0;
+    if ( (L>0 || xwaspy) && edptr==0)
+      edptr=new textArea;    
+    if (edptr && (L>0 || xwaspy)){
+      edptr->elements.clear();
+      edptr->clipline=-1;
+      edptr->filename=remove_path(giac::remove_extension(filename))+".py";
+      if (edptr->filename==remove_path(filename))
+        edptr->filename=giac::remove_extension(filename)+"_py.py";
+      //cout << "script " << edptr->filename << "\n";
+      edptr->editable=true;
+      edptr->changed=false;
+      edptr->python=python_compat(contextptr);
+      edptr->elements.clear();
 #ifdef HP39
-  edptr->y = 12;
-  edptr->lineHeight=14;
-  edptr->longlinescut=false;
+      edptr->y = 12;
+      edptr->lineHeight=14;
+      edptr->longlinescut=false;
 #else  
-	edptr->y=0;
+      edptr->y=0;
 #endif
-	add(edptr,bufscript);
-	edptr->line=0;
-	//edptr->line=edptr->elements.size()-1;
-	edptr->pos=0;
-      }    
-    }
+      add(edptr,L?bufscript:"def f(x):\n  return x");
+      edptr->line=0;
+      //edptr->line=edptr->elements.size()-1;
+      edptr->pos=0;
+    }    
     // read console state
     // insure parse messages are cleared
     Console_Init(contextptr);
     Console_Clear_EditLine();
+    bool parse_py=false;
+    bool execafter=true; // if console has only inputs, propose to exec session
     for (int pos=0;;++pos){
       unsigned short int l,curs;
       unsigned char type,readonly;
       if ( (l=Bfile_ReadFile_OS2(hf))==0) break;
       curs=Bfile_ReadFile_OS2(hf);
       type = *hf; ++hf;
+      if (type)
+	execafter=false;
       readonly=*hf; ++hf;
       char buf[l+1];
       Bfile_ReadFile_OS(hf,buf,l);
       buf[l]=0;
+      if (pos==0 && execafter && !strcmp(buf,"python"))
+	parse_py=true;
       // ok line ready in buf
       while (Line[Current_Line].readonly)
 	Console_MoveCursor(CURSOR_DOWN);
@@ -17811,19 +21188,38 @@ void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONT
 #endif
     }
     console_changed=0;
-    int p=python_compat(contextptr);
-    if (p>=0 && p&4){
-      xcas_python_eval=1;
+    console_log(parse_py?"parse py":"parse xcas");
+    if (execafter){
+      console_log("exec after");
+      console_log(edptr?"edptr":"no edptr");
       if (edptr){
-	check_parse(edptr,edptr->elements,python_compat(contextptr),contextptr);
+	if (parse_py){
+	  string tmp=merge_area(edptr->elements);
+	  console_log("micropy");
+	  console_log(tmp.c_str());
+	  micropy_ck_eval(tmp.c_str());
+	}
+	else
+	  check_parse(edptr,edptr->elements,python_compat(contextptr),contextptr);
       }
+      if (do_confirm("Run session?"))
+        run_session(0,contextptr);
     }
-    else
-      xcas_python_eval=p<0?-1:0;
-    if (p==-1){
-      //js_ck_eval("1",&global_js_context);
-      if (edptr)
-	check_parse(edptr,edptr->elements,-1,contextptr);
+    else {
+      int p=python_compat(contextptr);
+      if (p>=0 && (p&4)){
+        xcas_python_eval=1;
+        if (edptr){
+          check_parse(edptr,edptr->elements,python_compat(contextptr),contextptr);
+        }
+      }
+      else
+        xcas_python_eval=p<0?-1:0;
+      if (p==-1){
+        //js_ck_eval("1",&global_js_context);
+        if (edptr)
+          check_parse(edptr,edptr->elements,-1,contextptr);
+      }
     }
     Console_FMenu_Init(contextptr); // insure the menus are sync-ed
     return true;
@@ -18474,7 +21870,7 @@ void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONT
 #else
     string filename(remove_path(remove_extension(fname)));
 #if defined NUMWORKS && defined XWASPY
-    bool xwaspy=filename!="session"; // xw will be saved as a fake .py file
+    bool xwaspy=true;//filename!="session"; // xw will be saved as a fake .py file
 #else
     bool xwaspy=false;
 #endif
@@ -18500,6 +21896,8 @@ void save_console_state_smem(const char * filename,bool xwaspy,bool qr,GIAC_CONT
     // it's not a session, but a script, restore last session settings and load script
 #ifdef NSPIRE_NEWLIB
     const char sessionname[]="session.xw.tns";
+#elif defined NUMWORKS
+    const char sessionname[]="session_xw.py";
 #else
     const char sessionname[]="session.xw";
 #endif 
@@ -18559,7 +21957,7 @@ void numworks_certify_internal(){
       Bdisp_AllClr_VRAM();
       return;
     }
-    PrintMini(0,0,lang==1?"Amorcage non certifie.":"Boot sector not certified.",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+    PrintMini7(0,0,lang==1?"Amorcage non certifie.":"Boot sector not certified.",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
     std::vector<fileinfo_t> v=tar_fileinfo(flash_buf,0);
     int i=0;
     for (;i<v.size();++i){
@@ -18572,9 +21970,9 @@ void numworks_certify_internal(){
     if (i<v.size() && !bootloader_sha256_check(romaddr))
       i=v.size();
     if (i==v.size()){
-      PrintMini(0,18,lang==1?"Pour mettre a jour:":"Please upgrade from:",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
-      PrintMini(0,36,"www-fourier.univ-grenoble-alpes.fr",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
-      PrintMini(0,54,"/~parisse/nw",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(0,18,lang==1?"Pour mettre a jour:":"Please upgrade from:",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
+      PrintMini7(0,36,"www-fourier.univ-grenoble-alpes.fr",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
+      PrintMini7(0,54,"/~parisse/nw",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
       int key; GetKey(&key);
     }
     else {
@@ -18594,8 +21992,13 @@ void numworks_certify_internal(){
 
 
   int restore_session(const char * fname,GIAC_CONTEXT){
+    console_log("restore session");
     //confirm("restore session",fname); 
     string filename(remove_path(remove_extension(fname)));
+#ifdef NUMWORKS
+      if (filename=="session")
+        filename += "_xw";
+#endif
 #ifdef NSPIRE_NEWLIB
     if (file_exists((filename+".xw.tns").c_str()))
       filename += ".xw.tns";
@@ -18616,26 +22019,26 @@ void numworks_certify_internal(){
       numworks_certify_internal();
       Bdisp_AllClr_VRAM();
       int x=0,y=0;
-      PrintMini(x,y,"KhiCAS 1.9 (c) 2024 B. Parisse",TEXT_MODE_NORMAL, COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,"KhiCAS 1.9 (c) 2024 B. Parisse",TEXT_MODE_NORMAL, COLOR_BLACK, COLOR_WHITE,false);
       y +=18;
-      PrintMini(x,y,"et al, License GPL 2",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,"et al, License GPL 2",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
       y += 18;
 #ifdef NSPIRE_NEWLIB
-      PrintMini(x,y,((lang==1)?"Taper menu plusieurs fois":"Type menu several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,((lang==1)?"Taper menu plusieurs fois":"Type menu several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
 #else
 #if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
-      PrintMini(x,y,((lang==1)?"Taper shift-EXE":"Type shift-EXE"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,((lang==1)?"Taper shift-EXE":"Type shift-EXE"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
 #else
-      PrintMini(x,y,((lang==1)?"Taper HOME plusieurs fois":"Type HOME several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,((lang==1)?"Taper HOME plusieurs fois":"Type HOME several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
 #endif
 #endif
       y += 18;
-      PrintMini(x,y,((lang==1)?"pour quitter KhiCAS.":"to leave KhiCAS."),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,((lang==1)?"pour quitter KhiCAS.":"to leave KhiCAS."),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
       y += 18;
-      PrintMini(x,y,(lang==1)?"Si le calcul formel est interdit":"If CAS is forbidden!",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+      PrintMini7(x,y,(lang==1)?"Si le calcul formel est interdit":"If CAS is forbidden!",TEXT_MODE_NORMAL, _red, COLOR_WHITE,false);
       y += 18;
 #ifdef NSPIRE_NEWLIB
-      PrintMini(x,y,(lang==1)?"quittez Khicas (menu menu menu)":"Leave Khicas (menu menu menu)",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+      PrintMini7(x,y,(lang==1)?"quittez Khicas (menu menu menu)":"Leave Khicas (menu menu menu)",TEXT_MODE_NORMAL, _red, COLOR_WHITE,false);
       if (confirm("Interpreter? enter: Xcas, esc: MicroPython",(lang==1?"Peut se modifier depuis menu configuration":"May be changed later from menu configuration"),false,130)==KEY_CTRL_F6){
 	python_compat(4,contextptr);
 	xcas_python_eval=1;
@@ -18643,14 +22046,16 @@ void numworks_certify_internal(){
 	Console_FMenu_Init(contextptr);
       }
       else {
+	console_log("restore session Xcas");
 	python_compat(1,contextptr);
 	*logptr(contextptr) << "Xcas interpreter, Python compatible mode\n";
+	console_log("restore session 2");
       }
 #else
 #if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
-      PrintMini(x,y,(lang==1)?"quittez Khicas (HOME)":"Leave Khicas (HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+      PrintMini7(x,y,(lang==1)?"quittez Khicas (HOME)":"Leave Khicas (HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE,false);
 #else
-      PrintMini(x,y,(lang==1)?"quittez Khicas (HOME HOME HOME)":"Leave Khicas (HOME HOME HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+      PrintMini7(x,y,(lang==1)?"quittez Khicas (HOME HOME HOME)":"Leave Khicas (HOME HOME HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE,false);
 #endif
       if (confirm("Interpreter? OK: Xcas, Back: MicroPython",(lang==1?"Peut se modifier depuis menu configuration":"May be changed later from menu configuration"),false,130)==KEY_CTRL_F6){
 	python_compat(4,contextptr);
@@ -18713,6 +22118,7 @@ void numworks_certify_internal(){
 #else // NUMWORKS && DEVICE
 
   int restore_session(const char * fname,GIAC_CONTEXT){
+    console_log("restore session");
     // cout << "0" << fname << "\n"; Console_Disp(1); GetKey(&key);
     string filename(fname); //filename="mandel.py.tns";
     if (filename.size()>4 && filename.substr(filename.size()-4,4)==".tns")
@@ -18739,30 +22145,32 @@ void numworks_certify_internal(){
     else {
       if ((filename.size()<2 || filename.substr(filename.size()-2,2)!="xw") && file_exists((filename+".py").c_str()))
 	return restore_script(filename,true,contextptr);
+      if (filename.substr(filename.size()-3,3)=="_xw")
+        filename += ".py";
     }
 #endif
     if (!load_console_state_smem(filename.c_str(),contextptr)){
       int x=0,y=0;
-      PrintMini(x,y,"KhiCAS 1.9 (c) 2024 B. Parisse",TEXT_MODE_NORMAL, COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,"KhiCAS 1.9 (c) 2024 B. Parisse",TEXT_MODE_NORMAL, COLOR_BLACK, COLOR_WHITE,false);
       y +=18;
-      PrintMini(x,y,"et al, License GPL 2",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,"et al, License GPL 2",TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
       y += 18;
 #ifdef NSPIRE_NEWLIB
-      PrintMini(x,y,((lang==1)?"Taper menu plusieurs fois":"Type menu several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,((lang==1)?"Taper menu plusieurs fois":"Type menu several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
 #else
 #if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
-      PrintMini(x,y,((lang==1)?"Taper HOME":"Type HOME"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,((lang==1)?"Taper HOME":"Type HOME"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
 #else
-      PrintMini(x,y,((lang==1)?"Taper HOME plusieurs fois":"Type HOME several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,((lang==1)?"Taper HOME plusieurs fois":"Type HOME several times"),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
 #endif
 #endif
       y += 18;
-      PrintMini(x,y,((lang==1)?"pour quitter KhiCAS.":"to leave KhiCAS."),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE);
+      PrintMini7(x,y,((lang==1)?"pour quitter KhiCAS.":"to leave KhiCAS."),TEXT_MODE_NORMAL,COLOR_BLACK, COLOR_WHITE,false);
       y += 18;
-      PrintMini(x,y,(lang==1)?"Si le calcul formel est interdit":"If CAS is forbidden!",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+      PrintMini7(x,y,(lang==1)?"Si le calcul formel est interdit":"If CAS is forbidden!",TEXT_MODE_NORMAL, _red, COLOR_WHITE,false);
       y += 18;
 #ifdef NSPIRE_NEWLIB
-      PrintMini(x,y,(lang==1)?"quittez Khicas (doc doc doc)":"Leave Khicas (doc doc doc)",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+      PrintMini7(x,y,(lang==1)?"quittez Khicas (doc doc doc)":"Leave Khicas (doc doc doc)",TEXT_MODE_NORMAL, _red, COLOR_WHITE,false);
       if (confirm("Interpreter? enter: Xcas, esc: MicroPython",(lang==1?"Peut se modifier depuis menu configuration":"May be changed later from menu configuration"),false,130)==KEY_CTRL_F6){
 	python_compat(4,contextptr);
 	xcas_python_eval=1;
@@ -18770,14 +22178,15 @@ void numworks_certify_internal(){
 	Console_FMenu_Init(contextptr);
       }
       else {
+	console_log("restore session 1");
 	python_compat(1,contextptr);
 	*logptr(contextptr) << "Xcas interpreter, Python compatible mode\n";
       }
 #else
 #if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
-      PrintMini(x,y,(lang==1)?"quittez Khicas (HOME)":"Leave Khicas (HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+      PrintMini7(x,y,(lang==1)?"quittez Khicas (HOME)":"Leave Khicas (HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE,false);
 #else
-      PrintMini(x,y,(lang==1)?"quittez Khicas (HOME HOME HOME)":"Leave Khicas (HOME HOME HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE);
+      PrintMini7(x,y,(lang==1)?"quittez Khicas (HOME HOME HOME)":"Leave Khicas (HOME HOME HOME)",TEXT_MODE_NORMAL, _red, COLOR_WHITE,false);
 #endif
       if (confirm("Interpreter? OK: Xcas, Back: MicroPython",(lang==1?"Peut se modifier depuis menu configuration":"May be changed later from menu configuration"),false,130)==KEY_CTRL_F6){
 	python_compat(4,contextptr);
@@ -18786,12 +22195,15 @@ void numworks_certify_internal(){
 	Console_FMenu_Init(contextptr);
       }
       else {
+	console_log("restore session 1");
 	python_compat(1,contextptr);
 	// fake lexer required to initialize color syntax
 	gen g("abs",contextptr);
+	console_log("restore session 2");
 	*logptr(contextptr) << "Xcas interpreter, Python compatible mode\n";
       }
 #endif
+      console_log("restore session 3");
       Bdisp_AllClr_VRAM();
 #if defined GIAC_SHOWTIME || defined NSPIRE_NEWLIB
       Console_Output("Reglage de l'heure, exemple");
@@ -18799,6 +22211,7 @@ void numworks_certify_internal(){
       Console_Output("12,37=>,");
       Console_NewLine(LINE_TYPE_OUTPUT, 1);
 #endif
+      console_log("restore session 4");
       //menu_about();
       return 0;
     }
@@ -19273,7 +22686,7 @@ void numworks_certify_internal(){
 	  smallmenuitems[12].text = (char *) ((lang==1)?"Aide interface (log)":"Shortcuts");
 	  smallmenuitems[13].text = (char*)((lang==1)?"Editer matrice (i)":"Matrix editor");
 	  smallmenuitems[14].text = (char*) ((lang==1)?"Creer parametre (,)":"Create slider (,)");
-	  smallmenuitems[15].text = (char*) ((lang==1)?"A propos (x^y)":"About");
+          smallmenuitems[15].text = (char*) "Documentation & About";
 #ifdef NSPIRE_NEWLIB
 	  smallmenuitems[16].text = (char*) ((lang==1)?"Quitter (menu)":"Quit");
 #else
@@ -19348,8 +22761,12 @@ void numworks_certify_internal(){
 		save(buf,true,contextptr);
 		string fname(remove_path(giac::remove_extension(buf)));
 		strcpy(session_filename,fname.c_str());
-		if (edptr)
-		  edptr->filename=fname+".py";
+		if (edptr){
+                  if (fname==remove_path(buf))
+                    edptr->filename=fname+"_py.py";
+                  else
+                    edptr->filename=fname+".py";
+                }
 	      }
 	      break;
 	    }
@@ -19446,12 +22863,32 @@ void numworks_certify_internal(){
 	      menu_setup(contextptr);
 	      continue;
 	    }
-	    if(smallmenu.selection == 13 ||smallmenu.selection == 16 ) {
+	    if (smallmenu.selection==13 || smallmenu.selection==16 ) {
+              if (smallmenu.selection==16){
+                string url(fourier_url);
+#ifdef NSPIRE_NEWLIB
+                url += "ti/khicasti";
+#else
+                url += "numworks/khicasnw";
+                if (lang!=1)
+                  url += "en";
+#endif
+                url += ".html";
+                QRdisp(url.c_str(),"KhiCAS doc qrcode");
+              }
 	      textArea text;
 	      text.editable=false;
 	      text.clipline=-1;
 	      text.title = smallmenuitems[smallmenu.selection-1].text;
-	      add(&text,smallmenu.selection==13?((lang==1)?shortcuts_fr_string:shortcuts_en_string):((lang==1)?apropos_fr_string:apropos_en_string));
+	      add(&text,smallmenu.selection==13?
+#ifdef QRHELP
+                  ((lang==1)?shortcuts_fr_string:shortcuts_en_string):
+                  ((lang==1)?apropos_fr_string:apropos_en_string)
+#else
+                  shortcuts_en_string:
+                  apropos_en_string
+#endif
+                  );
 	      doTextArea(&text,contextptr);
 	      continue;
 	    } 
@@ -19497,7 +22934,7 @@ void numworks_certify_internal(){
         return CONSOLE_SUCCEEDED;
       }
       if ( (key >= KEY_CTRL_F1 && key <= KEY_CTRL_F6) ||
-	   (key >= KEY_CTRL_F7 && key <= KEY_CTRL_F14) 
+	   (key >= KEY_CTRL_F7 && key <= KEY_CTRL_F20) 
 	   ){
 	Console_FMenu(key,contextptr);
 	Console_Disp(1,contextptr);
@@ -19682,7 +23119,7 @@ void numworks_certify_internal(){
   }
 
   const char * console_menu(int key,char* cfg_,int active_app){
-    if (key>=KEY_CTRL_F7 && key<=KEY_CTRL_F14) key-=900;
+    if (key>=KEY_CTRL_F7 && key<=KEY_CTRL_F20) key-=900;
     char * cfg=cfg_;
     int i, matched = 0;
     const char * ret=0;
@@ -19876,7 +23313,7 @@ const char *Console_Draw_FMenu(int key, struct FMenu *menu, char *cfg, int activ
 #ifdef BW
     os_draw_string_medium(x,y,COLOR_BLACK,mode?color_gris:COLOR_WHITE,s);
 #else
-    PrintMini(x,y,(char *)s,mode,COLOR_BLACK, COLOR_WHITE);
+    PrintMini7(x,y,(const char *)s,mode,COLOR_BLACK, COLOR_WHITE,false);
 #endif
   }
 
@@ -20219,6 +23656,10 @@ void PrintRev(const char *s,int color,bool colorsyntax,GIAC_CONTEXT) {
 
   // redraw_mode=1 clear area
   int Console_Disp(int redraw_mode,GIAC_CONTEXT){
+#ifdef SDL_KHICAS
+    redraw_mode |= 1;
+    Bdisp_AllClr_VRAM();
+#endif
 #ifdef HP39
     int istatus=1;
 #else
@@ -20491,20 +23932,20 @@ void PrintRev(const char *s,int color,bool colorsyntax,GIAC_CONTEXT) {
       menu += string(menu_f3);
 #ifdef HP39
       menu += " |cmds |A<>a |Fich";
-      drawRectangle(0,C205,LCD_WIDTH_PX,17,giac::_BLACK);
+      drawRectangle(0,C205,LCD_WIDTH_PX,17,SDK_BLACK);
       PrintMini(0,C205,menu.c_str(),4);
 #else
       menu += xcas_python_eval==1?"|4 edt|5 2d|6 logo|7 lin|8 matr|9arit|0 plt":"|4 edt|5 2d|6 regr|7 matr|8 cplx|9 arit|0 rand";
       int xcas_color=65055,python_color=52832,js_color=63048;
       int interp_color=xcas_python_eval==-1?js_color:(xcas_python_eval==1?python_color:xcas_color);
       drawRectangle(0,C205,LCD_WIDTH_PX,17,interp_color);
-      PrintMiniMini(0,C205,menu.c_str(),0,giac::_BLACK,interp_color);
+      PrintMiniMini(0,C205,menu.c_str(),0,SDK_BLACK,interp_color);
 #endif
     }
     
     // status, clock,
 #ifdef HP39
-    drawRectangle(0,0,LCD_WIDTH_PX,shell_fonth,giac::_WHITE);
+    drawRectangle(0,0,LCD_WIDTH_PX,shell_fonth,SDK_WHITE);
 #endif
     console_disp_status(contextptr);
     return CONSOLE_SUCCEEDED;
@@ -20771,8 +24212,8 @@ void PrintRev(const char *s,int color,bool colorsyntax,GIAC_CONTEXT) {
   extern "C" void mp_stack_set_limit(size_t);
 #endif // NUMWORKS
 
-
   int console_main(GIAC_CONTEXT,const char * sessionname){
+    console_log("console main 0");
 #if defined NUMWORKS && defined DEVICE
     os_set_pixel(0, 0, 0x7ff); 
     // insure value not too high (_heap_size depends on launcher firmware)
@@ -20782,18 +24223,24 @@ void PrintRev(const char *s,int color,bool colorsyntax,GIAC_CONTEXT) {
 #if defined MICROPY_LIB
     mp_stack_ctrl_init();
 #endif
+    console_log("console main 1");
     //volatile int stackTop;
     //mp_stack_set_top((void *)(&stackTop));
     //mp_stack_set_limit(24*1024);
 #ifdef QUICKJS
     quickjs_ck_eval("0");
 #endif
+    console_log("console main 2");
 #if defined MICROPY_LIB && !defined BW
     giac::micropy_ptr=micropy_ck_eval;
 #endif
     python_heap=0;
     sheetptr=0;
+#ifdef NSPIRE_NEWLIB
     shutdown=do_shutdown;
+#else
+    khicas_shutdown=do_shutdown;
+#endif
 #ifdef NSPIRE_NEWLIB
     unsigned osid=0,osidcx52noncasnont=0x1040E4D0;
     osid=* (unsigned *) 0x10000020;
@@ -20849,16 +24296,21 @@ void PrintRev(const char *s,int color,bool colorsyntax,GIAC_CONTEXT) {
     bool b=nspire_fr();
     lang=b?1:0;
 #endif
+    console_log("console main 3");
     // SetQuitHandler(save_session); // automatically save session when exiting
     int key;
     Console_Init(contextptr);
+    console_log("console main 4");
     if (!turtleptr){
       turtle();
       _efface_logo(vecteur(0),contextptr);
     }
+    console_log("console main 5");
     caseval("floor"); // init xcas parser for Python syntax coloration (!)
+    console_log("console main 6");
     Bdisp_AllClr_VRAM();
     rand_seed(millis(),contextptr);
+    console_log("console main 7");
     if (nspire_exam_mode){ // disabled: save LED state for restoration at end
       // set_exam_mode(2,contextptr);
       exam_mode=0;
@@ -20873,9 +24325,11 @@ void PrintRev(const char *s,int color,bool colorsyntax,GIAC_CONTEXT) {
     giac::set_language(lang,contextptr);
 #endif
     giac::angle_radian(os_get_angle_unit()==0,contextptr);
+    console_log("before disp");
     //GetKey(&key);
     Console_Disp(1,contextptr);
     // GetKey(&key);
+    console_log("after disp");
     char *expr=0;
 #ifndef NO_STDEXCEPT
     try {
@@ -21204,7 +24658,7 @@ void drawAtom(uint8_t id) {
 #ifdef NSPIRE_NEWLIB
 	os_draw_string_small_(0,200,gettext("enter: tout, P:protons, N:nucleons, M:mass, E:khi"));
 #else
-	os_draw_string_small_(0,200,gettext("OK: tout, P:protons, N:nucleons, M:mass, E:khi"));
+	os_draw_string_small_(0,200,gettext("OK: all, P:protons, N:nucleons, M:mass, E:khi"));
 #endif
 	for(int i = 0; i < ATOM_NUMS; i++) {
 	  drawAtom(i);
@@ -21316,12 +24770,16 @@ void drawAtom(uint8_t id) {
 } // namespace xcas
 #endif // ndef NO_NAMESPACE_XCAS
 
+#if defined MICROPY_LIB && !defined SDL_KHICAS && !defined NUMWORKS && !defined NSPIRE_NEWLIB
+// FIXME, already defined in mphalport.c libmicropy
+#else
 void console_output(const char * s,int l){
   char buf[l+1];
   strncpy(buf,s,l);
   buf[l]=0;
   xcas::dConsolePut(buf);
 }
+#endif
 
 const char * console_input(const char * msg1,const char * msg2,bool numeric,int ypos){
   static string str;
@@ -22789,6 +26247,11 @@ const char * gettext(const char * s) {
 }
 
   void process_freeze(){
+    if (nws_freezeturtle){
+      int key; GetKey(&key);
+      nws_freezeturtle=false;
+      return;
+    }
     if (freezeturtle){
       xcas::displaylogo();
       freezeturtle=false;
@@ -22898,4 +26361,11 @@ int kcas_main(int isAppli, unsigned short OptionNum)
 
 #endif // hp39
 
+void copy_to_xcas_clipboard(const char * s){
+  giac::copy_clipboard(s,false);
+}
+
+const char * get_xcas_clipboard(){
+  return giac::clipboard()->c_str();
+}
 #endif // KHICAS

@@ -1,5 +1,5 @@
 // implementation of the minimal C SDK for KhiCAS
-int (*shutdown)()=0;
+int (*khicas_shutdown)()=0;
 
 short shutdown_state=0;
 short exam_mode=0,nspire_exam_mode=0;
@@ -763,14 +763,14 @@ int write_file(const char * filename,const char * s,int len){
        strcmp(filename,"session.py.tns")!=0 
        )
       )
-    return false;
-  FILE * f=fopen(filename,"w");
+    return 0;
+  FILE * f=fopen(filename,"wb");
   if (!f) return false;
   if (!len) len=strlen(s);
   for (int i=0;i<len;++i)
     fputc(s[i],f);
   fclose(f);
-  return true;
+  return 1;
 }
 
 #define FILENAME_MAXRECORDS 64
@@ -1347,7 +1347,7 @@ int getkey(int allow_suspend){
       for (int n=0;!on_key_pressed();++n){
 	loopsleep(100);
 	idle();
-	if (!exam_mode && nspire_exam_mode!=2 && shutdown
+	if (!exam_mode && nspire_exam_mode!=2 && khicas_shutdown
 	    // && n&0xff==0
 	    ){
 	  unsigned curtime=* (volatile unsigned *) NSPIRE_RTC_ADDR;
@@ -1373,7 +1373,7 @@ int getkey(int allow_suspend){
 	      idle();
 	    }
 	    if (m==mmax){
-	      if (shutdown())
+	      if (khicas_shutdown())
 		return KEY_SHUTDOWN;
 	    }
 	    else {

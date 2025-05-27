@@ -2844,7 +2844,7 @@ namespace giac {
     vecteur w(v);
     for (unsigned i=0;i<v.size();++i){
       gen r=ratnormal(v[i]._SYMBptr->feuille/g,contextptr);
-      if (r.type==_INT_ && r.val!=1)
+      if (r.type==_INT_ && r.val!=1 && absint(r.val)<=INT_KARAMUL_SIZE)
 	w[i]=symbolic(at_pow,makesequence(symb_exp(g),r));
     }
     return v==w?e:subst(e,v,w,false,contextptr);
@@ -4664,6 +4664,37 @@ namespace giac {
         if (cplxv)
           base=subst(base,cst_i,x0,true,contextptr);
         syst.push_back(symb_pow(vars[i],d)-pow(base,num,contextptr));
+        // if gg is not irreducible, select the right factor
+        gen vi=_evalf(makesequence(v[i],extpar.digits),contextptr);
+        if (vi.type<_IDNT){
+          gen ggf=_factors(gg,contextptr);
+          if (ggf.type==_VECT && ggf._VECTptr->size()>2){
+            vecteur & ggl=*ggf._VECTptr;
+            gen oldP=ggl[0],oldval=abs(_horner(makesequence(oldP,vi,vx_var),contextptr),contextptr);
+            for (int i=2;i<ggl.size();i+=2){
+              gen curP=ggl[i],curval=abs(_horner(makesequence(curP,vi,vx_var),contextptr),contextptr);
+              if (is_greater(oldval,curval,contextptr)){
+                oldval=curval;
+                oldP=curP;
+              }
+            }
+            gg=oldP;
+            vecteur PV=gen2vecteur(_coeff(makesequence(oldP,vx_var),contextptr));
+            if (PV.size()>=2){
+              int I=1;
+              for (;I<PV.size()-1;++I){
+                if (!is_exactly_zero(PV[I]))
+                  break;
+              }
+              if (I==PV.size()-1)
+                v[i]=pow(-PV[I]/PV[0],inv(I,contextptr),contextptr);
+            }
+            oldP=subst(oldP,vx_var,vars[i],false,contextptr);
+            syst.back()=subst(oldP,V,VARS,false,contextptr);
+            if (cplxv)
+              syst.back()=subst(syst.back(),cst_i,x0,true,contextptr);              
+          }
+        }
       }
       else {
         debug_infolevel=dbg;
@@ -5170,6 +5201,9 @@ namespace giac {
 
   // detect if e is in an algebraic extension of Q, simplifies
   bool algnum_normal(gen & e,GIAC_CONTEXT){
+#ifdef USE_GMP_REPLACEMENTS
+    return false;
+#endif
     e=normalize_sqrt(e,contextptr); 
     gen E,G;
     vecteur syst,vars,v,varapprox;
@@ -5810,6 +5844,8 @@ namespace giac {
   }
 
   gen ratfactor(const gen & ee,bool with_sqrt,GIAC_CONTEXT){
+    if (has_num_coeff(ee))
+      return ee;
     gen e(normalize_sqrt(ee,contextptr));
     if (has_num_coeff(ee))
       e=e.evalf(1,contextptr);
@@ -6095,7 +6131,7 @@ namespace giac {
   gen _factor(const gen & args,GIAC_CONTEXT){
     if ( args.type==_STRNG && args.subtype==-1) return  args;
     if (is_integer(args)){
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
       return _ifactor(args,contextptr);
 #else
       *logptr(contextptr) << "Run ifactor(" << args << ") for integer factorization." << "\n";

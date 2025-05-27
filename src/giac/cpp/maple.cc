@@ -115,7 +115,7 @@ clock_t times (struct tms *__buffer) {
 #include <gsl/gsl_fft_real.h>
 #include <gsl/gsl_spline.h>
 #endif
-#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined SDL_KHICAS
 #else
 #include "signalprocessing.h"
 #endif
@@ -172,6 +172,25 @@ extern "C" double millis();
 
 #if (defined(EMCC) || defined (EMCC2)) && !defined(PNACL)
 extern "C" double emcctime();
+extern "C" double emcctime(){ // requires UI.Datestart to be initialized with Date.now() in JS code
+  double res;
+#ifdef GIAC_GGB
+  static double datestart=EM_ASM_DOUBLE_V({
+      var hw=Date.now();
+      return hw;
+    });
+  res=EM_ASM_DOUBLE_V({
+      var hw=Date.now();
+      return hw;
+    })-datestart;
+#else
+  res=EM_ASM_DOUBLE_V({
+      var hw=Date.now()-UI.Datestart;
+      return hw;
+    });
+#endif
+  return res;
+}
 // definition of emcctime should be added in emscripten directory src/library.js
 // search for _time definition, and return only Date.now() for _emcctime
 // otherwise time() will not work
@@ -287,7 +306,7 @@ namespace giac {
 
   gen _about(const gen & g,GIAC_CONTEXT){
     if ( g.type==_STRNG && g.subtype==-1) return  g;
-#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined SDL_KHICAS
 #else
     /* Displaying audio/image properties, addition by L. Marohnić */
     audio_clip *clip=audio_clip::from_gen(g);
@@ -625,7 +644,11 @@ namespace giac {
 #endif // GIAC_GGB
 
 #if (defined(EMCC) || defined (EMCC2)) && !defined(PNACL)
-      return emcctime()/1e6;
+#ifdef EMCC2
+      return emcctime()/1e3;
+#else
+      return emcctime()/1e6; // should be 1e3 if using Date.now()
+#endif
 #endif
       return total_time(contextptr);
     }
@@ -664,7 +687,11 @@ namespace giac {
     // return difftime(t2,t1);
     double t1=emcctime();
     eval(a,level,contextptr);
+#ifdef EMCC2    
+    return (emcctime()-t1)/1e3;
+#else
     return (emcctime()-t1)/1e6;
+#endif
 #endif
 #if !defined GIAC_HAS_STO_38 && (defined VISUALC || defined __MINGW_H)
     struct _timeb timebuffer0,timebuffer1;
@@ -814,7 +841,7 @@ namespace giac {
     int s=int(v.size());
     if (s!=3 && s!=4)
       return gensizeerr();
-    if (!ckmatrix(v.front()) || v[1].type!=_INT_ || v[2].type!=_INT_)
+    if (!ckmatrix(v.front()) || !is_integral(v[1]) || !is_integral(v[2]))
       return gentypeerr();
     matrice m=*v.front()._VECTptr;
     int ml,mc;
@@ -829,7 +856,7 @@ namespace giac {
       return gensizeerr();
     gen p=m[l][c];
     int l1=0,l2=ml-1;
-    if (s==4 && v[3].type==_INT_){
+    if (s==4 && is_integral(v[3])){
       int lmin=v[3].val;
       if (lmin<0){
 	l1 = -lmin;
@@ -842,8 +869,12 @@ namespace giac {
       }
     }
     for (;l1<=l2;++l1){
-      if (l1!=l && !is_zero(m[l1][c]))
-	linear_combination(p,*m[l1]._VECTptr,-m[l1][c],*m[l]._VECTptr,plus_one,1,*m[l1]._VECTptr,epsilon(contextptr));
+      if (l1!=l && !is_zero(m[l1][c])){
+        if (abs_calc_mode(contextptr)==38)
+          linear_combination(p,*m[l1]._VECTptr,-m[l1][c],*m[l]._VECTptr,p,1,*m[l1]._VECTptr,epsilon(contextptr));
+        else
+          linear_combination(p,*m[l1]._VECTptr,-m[l1][c],*m[l]._VECTptr,plus_one,1,*m[l1]._VECTptr,epsilon(contextptr));
+      }
     }
     return m;
   }
@@ -956,9 +987,26 @@ namespace giac {
   static define_unary_function_eval (__col,&_col,_col_s);
   define_unary_function_ptr5( at_col ,alias_at_col,&__col,0,true);
 
+  int occurences(const gen & f,const gen & x){
+    if (f==x)
+      return 1;
+    if (f.type==_SYMB)
+      return occurences(f._SYMBptr->feuille,x);
+    if (f.type!=_VECT)
+      return 0;
+    int res=0;
+    const_iterateur it=f._VECTptr->begin(),itend=f._VECTptr->end();
+    for (;it!=itend;++it)
+      res += occurences(*it,x);
+    return res;
+  }
+
   static gen count(const gen & f,const gen & v,const context * contextptr,const gen & param){
-    if (v.type!=_VECT)
+    if (v.type!=_VECT){
+      if (param==v) // count occurences of param in f
+        return occurences(f,v);
       return f(v,contextptr);
+    }
     const_iterateur it=v._VECTptr->begin(),itend=v._VECTptr->end();
     if (param==at_row){
       vecteur res;
@@ -1266,7 +1314,7 @@ namespace giac {
   // open a file, returns a FD
   gen _open(const gen & g,GIAC_CONTEXT){
     if ( g.type==_STRNG && g.subtype==-1) return  g;
-#if defined(VISUALC) || defined(__MINGW_H) || defined (FIR) || defined(FXCG) || defined(NSPIRE) || defined(__ANDROID__) || defined(NSPIRE_NEWLIB) || defined(EMCC) || defined (EMCC2) || defined(GIAC_GGB) || defined KHICAS
+#if defined(VISUALC) || defined(__MINGW_H) || defined (FIR) || defined(FXCG) || defined(NSPIRE) || defined(__ANDROID__) || defined(NSPIRE_NEWLIB) || defined(EMCC) || defined (EMCC2) || defined(GIAC_GGB) || defined KHICAS || defined SDL_KHICAS
     return gensizeerr(gettext("not implemented"));
 #else
     gen tmp=check_secure();
@@ -1774,7 +1822,7 @@ namespace giac {
     const vecteur &args=*g._VECTptr;
     if (args.size()<2)
       return gendimerr(contextptr);
-#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined SDL_KHICAS
     return _lagrange(g,contextptr);
 #else
     const gen &a=args[0],&b=args[1];
@@ -2191,7 +2239,7 @@ namespace giac {
     }
   }
 
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
   bool read_audio(vecteur & v,int & channels,int & sample_rate,int & bits_per_sample,unsigned int & data_size){
     convert_double_int(v);
     if (v.size()>1 && v[1].type!=_VECT)
@@ -2330,6 +2378,8 @@ namespace giac {
 #else
 #if !defined GIAC_GGB && (defined EMCC || defined (EMCC2))// must have EM_ASM code javascript inlined (emscripten 1.30.4 at least?)
 #include <emscripten.h>
+  gen _readwav(const gen & g,GIAC_CONTEXT);
+  gen _writewav(const gen & g,GIAC_CONTEXT);
   gen _playsnd(const gen & args,GIAC_CONTEXT){
     if (args.type==_STRNG){
       if (args.subtype==-1) return  args;
@@ -2696,6 +2746,19 @@ namespace giac {
 
 #ifdef HAVE_LIBPNG
   int write_png(const char *file_name, void *rows_, int w, int h, int colortype, int bitdepth){
+#ifdef __APPLE__
+    if (file_name[0]!='/'){
+      // detect relative path to /, redirect to Documents
+      char * path=getcwd(0,0);
+      if (!strcmp(path,"/") && getenv("HOME")){
+        string p(getenv("HOME")); p+="/Pictures/";
+        free(path);
+        p+=file_name;
+        return write_png(p.c_str(),rows_,w,h,colortype,bitdepth);
+      }
+      free(path);
+    }
+#endif
     png_bytep * rows=(png_bytep *) rows_;
     png_structp png_ptr;
     png_infop info_ptr;
@@ -2799,7 +2862,7 @@ namespace giac {
     if (g.type!=_VECT || g.subtype!=_SEQ__VECT || g._VECTptr->size()!=2 || g._VECTptr->front().type!=_STRNG)
       return gensizeerr(contextptr);
     vecteur v(gen2vecteur(g));
-#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined EMCC || defined EMCC2
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined SDL_KHICAS || defined EMCC || defined EMCC2
 #else
     rgba_image *img=rgba_image::from_gen(v[1]);
     if (img!=NULL) {
@@ -3603,7 +3666,11 @@ namespace giac {
 #if 1 // def NSPIRE
     gen_map m;
 #else
+#ifdef CPP11
+    gen_map m(islessthanf);
+#else
     gen_map m(ptr_fun(islessthanf));
+#endif
 #endif
     int s=int(args.size());
     vector<int> indexbegin,indexsize;

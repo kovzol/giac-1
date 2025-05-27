@@ -434,6 +434,7 @@ Boolean isLegalUTF8Sequence(const UTF8 *source, const UTF8 *sourceEnd);
 #endif
   extern double powlog2float;
   extern int MPZ_MAXLOG2;
+  extern int SET_COMPARE_MAXIDNT;
 
 #ifdef WITH_MYOSTREAM
   // replacement for std::cerr
@@ -655,7 +656,7 @@ throw(std::runtime_error("Stopped by user interruption.")); \
   };
   std::string gen2string(const gen & g);
   const int turtle_length=10;
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
   struct logo_turtle {
     double x,y;
     double theta; // theta is given in degrees or radians dep. on angle_mode
@@ -670,7 +671,7 @@ throw(std::runtime_error("Stopped by user interruption.")); \
     // <0 fill a polygon from previous turtle positions
     logo_turtle(): x(100),y(100),theta(0),visible(true),mark(true),direct(true),color(0),turtle_width(1),radius(0) {}
     inline bool equal_except_nomark(const logo_turtle &t) const {
-      return x==t.x && y==t.y && turtle_width==t.turtle_width && s==t.s && radius==t.radius;
+      return x==t.x && y==t.y && turtle_width==t.turtle_width && s==t.s && radius==t.radius && visible==t.visible;;
     }
   };
 #else // KHICAS
@@ -787,7 +788,7 @@ throw(std::runtime_error("Stopped by user interruption.")); \
     std::string _autosimplify_;
     std::string _lastprog_name_;
     const char * _currently_scanned_;
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
     std::vector<logo_turtle> _turtle_stack_; 
 #endif
     double _total_time_;
@@ -837,7 +838,7 @@ throw(std::runtime_error("Stopped by user interruption.")); \
   extern pthread_mutex_t context_list_mutex;
 #endif
   
-#if !defined(RTOS_THREADX) && !defined(BESTA_OS) && !defined(NSPIRE) && !defined(FXCG) && !defined KHICAS
+#if !defined(RTOS_THREADX) && !defined(BESTA_OS) && !defined(NSPIRE) && !defined(FXCG) && !defined KHICAS && !defined SDL_KHICAS
   extern std::map<std::string,context *> * context_names ;
 #endif
 
@@ -976,7 +977,7 @@ throw(std::runtime_error("Stopped by user interruption.")); \
   std::string lastprog_name(GIAC_CONTEXT);
   std::string lastprog_name(const std::string & b,GIAC_CONTEXT);
 
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
   logo_turtle & turtle();
   std::vector<logo_turtle> & turtle_stack();
 #else

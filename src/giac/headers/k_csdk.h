@@ -124,12 +124,7 @@ extern "C" {
   void numworks_redraw();
   void numworks_wait_1ms(int ms);
   // access to Numworks OS, defined in port.cpp (or modkandinsky.cpp)
-  inline void os_set_pixel(int x,int y,int c){
-    numworks_set_pixel(x,y,c);
-  }
-  inline int os_get_pixel(int x,int y){
-    return numworks_get_pixel(x,y);
-  }
+#if !defined SDL_KHICAS 
   inline void os_fill_rect(int x,int y,int w,int h,int c){
     numworks_fill_rect(x,y,w,h,c);
   }
@@ -139,12 +134,21 @@ extern "C" {
   inline int os_draw_string_small(int x,int y,int c,int bg,const char * s,int fake){
     return numworks_draw_string_small(x,y,c,bg,s,fake);
   }
-  inline void os_shaw_graph(){ return numworks_show_graph(); }
+#if 1 // ndef __MINGW_H
+  inline int os_get_pixel(int x,int y){
+    return numworks_get_pixel(x,y);
+  }
+  inline void os_set_pixel(int x,int y,int c){
+    numworks_set_pixel(x,y,c);
+  }
+  inline void os_show_graph(){ return numworks_show_graph(); }
   inline void os_hide_graph(){ return numworks_hide_graph(); }
   inline void os_redraw(){ return numworks_redraw(); }
+#endif
+#endif
   inline void os_wait_1ms(int ms) { numworks_wait_1ms(ms); }
   int getkey_raw(int allow_suspend); // Numworks scan code
-#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
+#if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB || defined SDL_KHICAS
   void sync_screen();
 #else
   inline void sync_screen(){}
@@ -191,13 +195,13 @@ extern "C" {
   inline int os_draw_string_small_(int x,int y,const char * s){ return os_draw_string_small(x,y,SDK_BLACK,SDK_WHITE,s,0);}
   
 #ifdef __cplusplus
-#ifdef NUMWORKS
+#if defined NUMWORKS // && !defined __MINGW_H
   inline int os_draw_string_medium(int x,int y,int c,int bg,const char * s,int fake=0){ return os_draw_string(x,y,c,bg,s,fake);}
 #else
   int os_draw_string_medium(int x,int y,int c,int bg,const char * s,int fake=0);
 #endif
 #else
-#ifdef NUMWORKS
+#if defined NUMWORKS // && !defined __MINGW_H
   inline int os_draw_string_medium(int x,int y,int c,int bg,const char * s,int fake){ return os_draw_string(x,y,c,bg,s,fake);}
 #else
   int os_draw_string_medium(int x,int y,int c,int bg,const char * s,int fake);
@@ -236,7 +240,7 @@ extern "C" {
   void statusline(int mode);
 #endif
   void statusflags(void);
-#ifdef NUMWORKS
+#if defined NUMWORKS // && !defined __MINGW_H
   inline int iskeydown(int key){ return getkey(key | 0x80000000); }
 #else
   int iskeydown(int key);
@@ -258,7 +262,7 @@ extern "C" {
   void reset_gc();  
 #endif
 
-  extern int (*shutdown)(); // function called after 2 hours of idle
+  extern int (*khicas_shutdown)(); // function called after 2 hours of idle
   extern short int shutdown_state;
   inline void Bdisp_PutDisp_DD(void){ sync_screen(); }
   inline void sprint_int(char * c,int i){ sprintf(c,"%d",i);}
@@ -272,6 +276,42 @@ extern "C" {
 #endif
   inline void Bdisp_AllClr_VRAM(void){ clear_screen(); }
   
+inline int do_getkey(){
+  os_wait_1ms(50);
+  return getkey(0);
+}
+
+inline void dtext(int x,int y,int fg,const char * s){
+  os_draw_string_medium(x,y,fg,SDK_WHITE,s);
+}
+
+inline void dclear(int c){
+  os_fill_rect(0,0,LCD_WIDTH_PX,LCD_HEIGHT_PX,c);
+}
+
+inline void dupdate(){
+  sync_screen();
+}
+#define C_WHITE SDK_WHITE
+#define C_BLACK SDK_BLACK
+#define C_RED (31<<11)
+#define C_BLUE 31
+#define KEY_EXIT KEY_CTRL_EXIT
+#define KEY_MENU KEY_CTRL_MENU
+#define KEY_OPTN KEY_CTRL_OPTN
+#define KEY_EXE KEY_CTRL_EXE
+#define KEY_LEFT KEY_CTRL_LEFT
+#define KEY_RIGHT KEY_CTRL_RIGHT
+#define KEY_UP KEY_CTRL_UP
+#define KEY_DOWN KEY_CTRL_DOWN
+#define KEY_DEL KEY_CTRL_DEL
+#define KEY_STORE KEY_CHAR_STORE
+#define KEY_PLUS KEY_CHAR_PLUS
+#define KEY_MINUS KEY_CHAR_MINUS
+#define KEY_DIV KEY_CHAR_DIV
+#define KEY_1 KEY_CHAR_1
+#define KEY_9 KEY_CHAR_9
+
 #ifdef __cplusplus
 }
 #endif

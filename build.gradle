@@ -9,7 +9,7 @@
 plugins {
     id 'visual-studio'
     id 'cpp'
-    id 'de.undercouch.download' version '3.1.1'
+    id 'de.undercouch.download' version '4.0.3'
     id 'maven-publish'
 }
 
@@ -25,7 +25,7 @@ project.setDescription('Giac CAS for GeoGebra')
  *
  * Emscripten related settings.
  *
- * Currently we use version 3.1.18, other versions may not work correctly,
+ * Currently we use version 4.0.7, other versions may not work correctly,
  * or may have problems in some Giac commands and results.
  *
  * 1. You will need to download the correct toolchain version by running the tasks downloadEmsdk,
@@ -56,28 +56,19 @@ project.setDescription('Giac CAS for GeoGebra')
  */
 
 // FIXME: Some of these settings are hardcoded at the moment, they need to be more general.
-def externalSourceDir = "/home/autotest/gmp+mpfr-llvm"
+def externalSourceDir = "/data/jenkins/ws"
 // You may need to download and unzip following packages:
-def gmpSourceDir = "$externalSourceDir/gmp-6.0.0"
-def mpfrSourceDir = "$externalSourceDir/mpfr-3.1.2"
-def emgiacSourceDir = "$externalSourceDir/emgiac"
+def gmpSourceDir = "$externalSourceDir/gmp-6.3.0"
+def mpfrSourceDir = "$externalSourceDir/mpfr-4.2.1"
 
 def jsPrebuiltDir = "src/giac.js/prebuilt"
 def LlvmMpfrA = "$jsPrebuiltDir/libmpfr.a"
 def LlvmGmpA = "$jsPrebuiltDir/libgmp.a"
-if (System.env['EXT_GMPMPFR'] != null && System.env['EXT_GMPMPFR'] == "local") {
-    LlvmMpfrA = "$mpfrSourceDir/src/.libs/libmpfr.a"
-    LlvmGmpA = "$gmpSourceDir/.libs/libgmp.a"
-}
-if (System.env['EXT_GMPMPFR'] != null && System.env['EXT_GMPMPFR'] == "emgiac") {
-    LlvmMpfrA = "$emgiacSourceDir/giac/libmpfr.a"
-    LlvmGmpA = "$emgiacSourceDir/giac/libgmp.a"
-}
 
 def emsdkDir = file('emsdk')
 def emsdkRunDir = file("$emsdkDir")
 
-def emscriptenVersion = 'tag-3.1.18'
+def emscriptenVersion = 'tag-4.0.7'
 if (System.env['EMSCRIPTEN_VERSION'] != null) {
     emscriptenVersion = System.env['EMSCRIPTEN_VERSION']
 }
@@ -88,7 +79,7 @@ def emccCommand = "${emscriptenDir}/emcc"
 // End of emscripten related settings. Huh.
 def java_home = org.gradle.internal.jvm.Jvm.current().javaHome
 ext.ggrev = project.findProperty("revision") ?: "SNAPSHOT"
-def giacVersion = '"1.9.0-' + ggrev + '"'
+def giacVersion = '"2.0.0-' + ggrev + '"'
 println giacVersion
 import org.apache.tools.ant.taskdefs.condition.Os
 def isMac = Os.isFamily(Os.FAMILY_MAC)
@@ -132,7 +123,6 @@ if (clangIphonesimulatorBin.length() > 0) {
 def macosSdk = exec_("xcrun", "--sdk", "macosx", "--show-sdk-path")
 def iphoneosSdk = exec_("xcrun", "--sdk", "iphoneos", "--show-sdk-path")
 def iphonesimulatorSdk = exec_("xcrun", "--sdk", "iphonesimulator", "--show-sdk-path")
-def iphoneosPlatform = exec_("xcrun", "--sdk", "iphoneos", "--show-sdk-platform-path")
 def minIosVersion = '9.0'
 
 def simulatorPostfix = "-simulator"
@@ -236,7 +226,9 @@ def giacSpecificSettings(cppCompiler, linker, targetPlatform) {
             cppCompiler.args '-std=c++17'
         }
 
+
         cppCompiler.define 'HAVE_UNISTD_H'
+        cppCompiler.define 'SIZEOF_VOID_P', '8'
 
         cppCompiler.args '-I', file('src/jni/jdkHeaders/linux').toString()
         cppCompiler.args '-fno-strict-aliasing' // maybe not needed
@@ -256,7 +248,7 @@ def giacSpecificSettings(cppCompiler, linker, targetPlatform) {
 
         cppCompiler.args '-I', file('src/jni/jdkHeaders/linux').toString()
         // overwrite standard headers with custom android headers
-        cppCompiler.args '-iquote', file('src/giac/headers/android').toString()
+        cppCompiler.args '-iquote', file("src/giac/headers/android/${targetPlatform.architecture.name}").toString()
         cppCompiler.args '-fno-strict-aliasing' // maybe not needed
         cppCompiler.args '-DPIC' // maybe not needed
         cppCompiler.args '-fPIC' // android 6.0 doesn't load libraries which have text relocations
@@ -410,7 +402,10 @@ model {
                 path gccPath, clangMacosxPath
 
                 cppCompiler.withArguments { args ->
-                    macosCompilerArgs(args, null)
+                    macosCompilerArgs(args, 'x86_64-apple-macos11')
+                }
+                linker.withArguments { args ->
+                    args << '--target=x86_64-apple-macos11'
                 }
             }
             target('osx_arm64') {
@@ -425,26 +420,12 @@ model {
                     args << '--target=arm64-apple-macos11'
                 }
             }
-            target('ios_armv7') {
-                cppCompiler.executable 'clang'
-                cppCompiler.withArguments { args ->
-                    iosClangCompilerArgs(args, iphoneosSdk, "armv7", minIosVersion, iosTarget("armv7", minIosVersion))
-                }
-                path clangIosPath
-            }
             target('ios_arm64') {
                 cppCompiler.executable 'clang'
                 cppCompiler.withArguments { args ->
                     iosClangCompilerArgs(args, iphoneosSdk, "arm64", minIosVersion, iosTarget("arm64", minIosVersion))
                 }
                 path clangIosPath
-            }
-            target('iphonesimulator_i386') {
-                cppCompiler.executable 'clang'
-                cppCompiler.withArguments { args ->
-                    iosClangCompilerArgs(args, iphonesimulatorSdk, "i386", minIosVersion, iosTarget("i386", minIosVersion, simulatorPostfix))
-                }
-                path clangIphonesimulatorPath
             }
             target('iphonesimulator_x86_64') {
                 cppCompiler.executable 'clang'
@@ -478,22 +459,22 @@ model {
 
         }
         // Note: Make sure manually that these executables are on the PATH.
-        android(Gcc) {
+        android(Clang) {
             target('androideabi') {
-                cppCompiler.executable 'arm-linux-androideabi-g++'
-                linker.executable 'arm-linux-androideabi-g++'
+                cppCompiler.executable 'armv7a-linux-androideabi35-clang++'
+                linker.executable 'armv7a-linux-androideabi35-clang++'
             }
             target('androidx86') {
-                cppCompiler.executable 'i686-linux-android-g++'
-                linker.executable 'i686-linux-android-g++'
+                cppCompiler.executable 'i686-linux-android35-clang++'
+                linker.executable 'i686-linux-android35-clang++'
             }
             target('androidx86_64') {
-                cppCompiler.executable 'x86_64-linux-android-g++'
-                linker.executable 'x86_64-linux-android-g++'
+                cppCompiler.executable 'x86_64-linux-android35-clang++'
+                linker.executable 'x86_64-linux-android35-clang++'
             }
             target('androidarm64') {
-                cppCompiler.executable 'aarch64-linux-android-g++'
-                linker.executable 'aarch64-linux-android-g++'
+                cppCompiler.executable 'aarch64-linux-android35-clang++'
+                linker.executable 'aarch64-linux-android35-clang++'
             }
         }
     }
@@ -670,7 +651,7 @@ model {
                     cppCompiler.args '-stdlib=libc++'
                     linker.args '-stdlib=libc++', '-lc++'
                     linker.args '-lgmp', '-lmpfr', '-lpthread'
-                    linker.args '-L', file("src/jni/prebuilt/osx/${targetPlatform.architecture.name}").toString(), '-dynamiclib'
+                    linker.args '-L', file("src/jni/prebuilt/maccatalyst/${targetPlatform.architecture.name == "arm-v8" ? "arm64" : "x86_64"}").toString(), '-dynamiclib'
                 }
             }
         }
@@ -705,18 +686,6 @@ task giacIosStaticLibrary(dependsOn: [
     'giacMaccatalyst_x86_64StaticLibrary',
     'giacMaccatalyst_arm64StaticLibrary'
 ])
-
-task configBundle(type: Exec) {
-    executable 'bundle'
-    args 'config', 'set', 'path', './.gems'
-    workingDir rootDir
-}
-
-task installGems(type: Exec, dependsOn: 'configBundle') {
-    executable 'bundle'
-    args 'install'
-    workingDir rootDir
-}
 
 task createFatIosStaticLibrary(dependsOn: ['simpleInterfaceIosStaticLibrary', 'giacIosStaticLibrary']) {
     doLast {
@@ -753,7 +722,8 @@ task createFatIosStaticLibrary(dependsOn: ['simpleInterfaceIosStaticLibrary', 'g
     }
 }
 
-task createIosFramework(dependsOn: createFatIosStaticLibrary, type: Copy) {
+tasks.register('createIosFramework', Copy) {
+    dependsOn createFatIosStaticLibrary
     description "Creates iOS framework"
     from("${buildDir}/libs/merged/ios") {
         include "Giac.a"
@@ -772,7 +742,8 @@ task createIosFramework(dependsOn: createFatIosStaticLibrary, type: Copy) {
     destinationDir = file("${buildDir}/libs/framework/ios")
 }
 
-task createIphonesimulatorFramework(dependsOn: createFatIosStaticLibrary, type: Copy) {
+tasks.register('createIphonesimulatorFramework', Copy) {
+    dependsOn createFatIosStaticLibrary
     description "Creates iPhone Simlator framework"
     from("${buildDir}/libs/merged/iphonesimulator") {
         include "Giac.a"
@@ -792,7 +763,8 @@ task createIphonesimulatorFramework(dependsOn: createFatIosStaticLibrary, type: 
     destinationDir = file("${buildDir}/libs/framework/iphonesimulator")
 }
 
-task createMaccatalystFramework(dependsOn: createFatIosStaticLibrary, type: Copy) {
+tasks.register('createMaccatalystFramework', Copy) {
+    dependsOn createFatIosStaticLibrary
     description "Creates Mac Catalyst framework"
     from("${buildDir}/libs/merged/maccatalyst") {
         include "Giac.a"
@@ -808,7 +780,8 @@ task createMaccatalystFramework(dependsOn: createFatIosStaticLibrary, type: Copy
 }
 
 
-task createIosXcframework(dependsOn: [createIosFramework, createIphonesimulatorFramework, createMaccatalystFramework], type: Copy) {
+tasks.register('createIosXcframework', Copy) {
+    dependsOn = [createIosFramework, createIphonesimulatorFramework, createMaccatalystFramework]
     description "Creates XCFramework"
     from("${buildDir}/libs/framework/iphonesimulator") {
         into "ios-arm64_x86_64-simulator"
@@ -827,93 +800,78 @@ task createIosXcframework(dependsOn: [createIosFramework, createIphonesimulatorF
     destinationDir = file("${buildDir}/libs/framework/Giac.xcframework")
 }
 
-task createPodspec() {
-    inputs.file "src/simpleInterface/pod/Giac.podspec"
-    inputs.property "version", ggrev
-    outputs.file "${buildDir}/cocoapods/Giac.podspec"
-    doLast {
-        def posdpec = inputs.files.singleFile
-        def engine = new groovy.text.SimpleTemplateEngine()
-        def binding = [version: ggrev]
-        def template = engine.createTemplate(posdpec).make(binding)
-        def outputFile = outputs.files.singleFile
-        outputFile.parentFile.mkdirs()
-        outputFile.write template.toString()
-    }
-}
-
-task cocoapodsZip(dependsOn: createIosXcframework, type: Zip) {
+tasks.register('cocoapodsZip', Zip) {
+    dependsOn 'createIosXcframework'
     baseName 'Giac'
-    from ("${buildDir}/libs/framework/Giac.xcframework") {
+    from("${buildDir}/libs/framework/Giac.xcframework") {
         into "Frameworks/Giac.xcframework"
     }
     destinationDir = file("${buildDir}/cocoapods/")
 }
 
-task publishPodspec(dependsOn: ['installGems', 'createPodspec', 'publishMavenZipPublicationToMavenRepository'], type: Exec) {
-    doFirst {
-        exec {
-            commandLine 'bundle', 'exec', 'pod', 'cache', 'clean', 'Giac'
-        }
-    }
-    commandLine 'bundle', 'exec', 'pod', 'repo', 'push', 'geogebra', "${buildDir}/cocoapods/Giac.podspec", '--allow-warnings'
-}
+tasks.register('installMinigiacExecutable') { dependsOn 'installMinigiacLinux64Executable' }
 
-task installMinigiacExecutable (dependsOn: 'minigiacExecutable')
-
-task installNodegiacExecutable (type: Exec) {
+tasks.register('installNodegiacExecutable', Exec) {
     // FIXME: dependencies should be set
     description 'Installs the nodegiac executable.'
     commandLine 'npm', 'install'
 }
 
-task testMinigiacExecutable (dependsOn: 'installMinigiacExecutable', type: Exec) {
+tasks.register('testMinigiacExecutable', Exec) {
+    dependsOn 'installMinigiacExecutable'
     description 'Tests the minigiac executable.'
     workingDir 'src/test'
     commandLine './regression', '-r'
 }
 
-task testNodegiacExecutable (dependsOn: 'installNodegiacExecutable', type: Exec) {
+tasks.register('testNodegiacExecutable', Exec) {
+    dependsOn 'installNodegiacExecutable'
     description 'Tests the nodegiac executable.'
     workingDir 'src/test'
     commandLine './regression', '-r', '-n'
 }
 
-task testExecutables (dependsOn: ['testNodegiacExecutable', 'testMinigiacExecutable'])
+tasks.register('testExecutables') {
+    dependsOn = ['testNodegiacExecutable', 'testMinigiacExecutable']
+}
 
 
-task androidCopyEabiLibjavagiacSo (dependsOn: 'javagiacAndroideabiSharedLibrary', type: Copy) {
+tasks.register('androidCopyEabiLibjavagiacSo', Copy) {
+    dependsOn 'javagiacAndroideabiSharedLibrary'
     description 'Copies libjavagiac.so files to the src/android folder.'
     from 'build/libs/javagiac/shared/androideabi'
     into 'giac-android/src/main/jniLibs/armeabi-v7a'
-    include ('libjavagiac.so')
+    include('libjavagiac.so')
 }
 
-task androidCopyX86LibjavagiacSo (dependsOn: 'javagiacAndroidx86SharedLibrary', type: Copy) {
+tasks.register('androidCopyX86LibjavagiacSo', Copy) {
+    dependsOn 'javagiacAndroidx86SharedLibrary'
     description 'Copies libjavagiac.so files to the src/android folder.'
     from 'build/libs/javagiac/shared/androidx86'
     into 'giac-android/src/main/jniLibs/x86'
-    include ('libjavagiac.so')
+    include('libjavagiac.so')
 }
 
-task androidCopyX86_64LibjavagiacSo (dependsOn: 'javagiacAndroidx86_64SharedLibrary', type: Copy) {
+tasks.register('androidCopyX86_64LibjavagiacSo', Copy) {
+    dependsOn 'javagiacAndroidx86_64SharedLibrary'
     description 'Copies libjavagiac.so files to the src/android folder.'
     from 'build/libs/javagiac/shared/androidx86_64'
     into 'giac-android/src/main/jniLibs/x86_64'
-    include ('libjavagiac.so')
+    include('libjavagiac.so')
 }
 
-task androidCopyArm64LibjavagiacSo (dependsOn: 'javagiacAndroidarm64SharedLibrary', type: Copy) {
+tasks.register('androidCopyArm64LibjavagiacSo', Copy) {
+    dependsOn 'javagiacAndroidarm64SharedLibrary'
     description 'Copies libjavagiac.so files to the src/android folder.'
     from 'build/libs/javagiac/shared/androidarm64'
     into 'giac-android/src/main/jniLibs/arm64-v8a'
-    include ('libjavagiac.so')
+    include('libjavagiac.so')
 }
 
-
-task run (dependsOn: 'installMinigiacExecutable', type: Exec) {
+tasks.register('run', Exec) {
+    dependsOn 'installMinigiacExecutable'
     description "Runs Giac's minigiac terminal"
-    commandLine "build/exe/minigiac/minigiac" // FIXME, this is hardcoded
+    commandLine "build/install/minigiac/linux64/minigiac" // FIXME, this is hardcoded
     standardInput = System.in
 }
 
@@ -935,10 +893,9 @@ tasks.addRule("Pattern: emccCompileWasm_<FILE>Cc: Compile <FILE>.cc into <FILE>.
                     // Be very careful when changing this: config.h also contains some entries!
                     def specialOptions = ''
                     def commandline = emccCommand
-                    // commandline += ' -DIN_GIAC -DGIAC_GENERIC_CONSTANTS -DHAVE_CONFIG_H -DNO_STDEXCEPT -fno-exceptions' // from old Makefile
-                    commandline += ' -DIN_GIAC -DGIAC_GENERIC_CONSTANTS -DHAVE_CONFIG_H' // from old Makefile
+                    commandline += ' -DIN_GIAC -DGIAC_GENERIC_CONSTANTS -DHAVE_CONFIG_H -DNO_STDEXCEPT -fno-exceptions' // from old Makefile
                     commandline += ' -DVERSION=' + giacVersion
-                    commandline += " -Dgammaf=tgammaf -s ALLOW_MEMORY_GROWTH=1 -fwasm-exceptions"
+                    commandline += " -Dgammaf=tgammaf -s ALLOW_MEMORY_GROWTH=1"
                     commandline += " -s WASM=1 -s NO_EXIT_RUNTIME=1"
                     commandline += " -s PRECISE_I64_MATH=1 -Oz" // new setting
                     commandline += " -DHAVE_UNISTD_H"
@@ -953,13 +910,13 @@ tasks.addRule("Pattern: emccCompileWasm_<FILE>Cc: Compile <FILE>.cc into <FILE>.
     }
 }
 
-task emccClean(type: Delete) {
+tasks.register('emccClean', Delete) {
     description 'Deletes .o files and linked giac*.js for cleaning up.'
     delete objDir, binaryJsDir
 }
 
 
-task emccCompileWasm {
+tasks.register('emccCompileWasm') {
     description 'Creates .o files for giac.js.'
     def list = []
     FileTree files = fileTree(dir: 'src/giac/cpp')
@@ -972,7 +929,8 @@ task emccCompileWasm {
     dependsOn list
 }
 
-task emccGiacJsWasm(dependsOn: 'emccCompileWasm') {
+tasks.register('emccGiacJsWasm') {
+    dependsOn 'emccCompileWasm'
     description 'Links giac.js.'
     mustRunAfter 'emccCompileWasm'
     def output = binaryJsDir + "/giacggb.js"
@@ -1000,11 +958,10 @@ task emccGiacJsWasm(dependsOn: 'emccCompileWasm') {
             linkerArgs << '-o' << output
             // linkerArgs << "-s" << "DISABLE_EXCEPTION_CATCHING=0"
             linkerArgs << '-Oz' << '-v' << '-s' << "EXPORTED_FUNCTIONS=['_caseval']"
-            linkerArgs << '-s' << 'EXTRA_EXPORTED_RUNTIME_METHODS=["cwrap"]'
+            linkerArgs << '-s' << 'EXPORTED_RUNTIME_METHODS=["cwrap"]'
 
-            linkerArgs << '--memory-init-file' << '0'
-            linkerArgs << '-fwasm-exceptions'
-            linkerArgs << '-s' << 'TOTAL_MEMORY=67108864' // consider increasing this if running out of memory on GB computations
+            linkerArgs << '-s' << 'TOTAL_MEMORY=67108864'
+            // consider increasing this if running out of memory on GB computations
             def linkerArgsString = linkerArgs.join(" ")
             println "Linking: ${emccCommand} ${linkerArgsString}"
             commandLine emccCommand
@@ -1013,14 +970,16 @@ task emccGiacJsWasm(dependsOn: 'emccCompileWasm') {
     }
 }
 
-task createGiacGgbJsWasm(dependsOn: 'emccGiacJsWasm', type: Copy) {
+tasks.register('createGiacGgbJsWasm', Copy) {
+    dependsOn 'emccGiacJsWasm'
     description 'Creates the giacggb.js folder to store embeddable giac.js.'
     from 'src/giac.js'
     into binaryJsDir
-    include ('ggb.html')
+    include('ggb.html')
 }
 
-task createGiacWasmJs(dependsOn: 'createGiacGgbJsWasm') {
+tasks.register('createGiacWasmJs') {
+    dependsOn 'createGiacGgbJsWasm'
     description 'Creates WebAssembly version of Giac which can be embedded into GeoGebraWeb.'
     doLast {
         exec {
@@ -1036,7 +995,7 @@ task createGiacWasmJs(dependsOn: 'createGiacGgbJsWasm') {
 
 // Using emsdk
 
-task downloadEmsdk {
+tasks.register('downloadEmsdk') {
     description 'Downloads emscripten SDK and downloads it.'
     outputs.dir emsdkDir
     doLast {
@@ -1053,7 +1012,7 @@ task downloadEmsdk {
     }
 }
 
-task installEmsdk () {
+tasks.register('installEmsdk') {
     description 'Installs/updates the emscripten SDK.'
     mustRunAfter 'downloadEmsdk'
     doLast {
@@ -1070,7 +1029,7 @@ task installEmsdk () {
     }
 }
 
-task activateEmsdk () {
+tasks.register('activateEmsdk') {
     description 'Activates the emscripten SDK.'
     mustRunAfter 'installEmsdk'
     doLast {
@@ -1081,7 +1040,7 @@ task activateEmsdk () {
     }
 }
 
-task emConfigureGmp {
+tasks.register('emConfigureGmp') {
     description 'Configures GMP for the emscripten SDK.'
     doLast {
         exec {
@@ -1091,17 +1050,22 @@ task emConfigureGmp {
     }
 }
 
-task emMakeGmp {
+tasks.register('emMakeGmp') {
     description 'Makes GMP with the emscripten SDK.'
     doLast {
         exec {
             commandLine 'bash', '-c', "source $emsdkRunDir/emsdk_env.sh; ${emscriptenDir}/emmake make"
             workingDir gmpSourceDir
         }
+        copy {
+            from("$gmpSourceDir/.libs/")
+            into(jsPrebuiltDir)
+            include("libgmp.a")
+        }
     }
 }
 
-task emConfigureMpfr {
+tasks.register('emConfigureMpfr') {
     description 'Configures MPFR for the emscripten SDK.'
     doLast {
         exec {
@@ -1114,20 +1078,24 @@ task emConfigureMpfr {
     }
 }
 
-task emMakeMpfr {
+tasks.register('emMakeMpfr') {
     description 'Makes MPFR with the emscripten SDK.'
     doLast {
         exec {
             commandLine 'bash', '-c', "source $emsdkRunDir/emsdk_env.sh; ${emscriptenDir}/emmake make"
             workingDir mpfrSourceDir
         }
+        copy {
+            from("$mpfrSourceDir/src/.libs/")
+            into(jsPrebuiltDir)
+            include("libmpfr.a")
+        }
     }
 }
 
-task androidCopyCrystaxSo (dependsOn: 'giac-android:copyCrystaxSo')
-
-task androidAar (dependsOn: ['androidCopyCrystaxSo', 'androidCopyEabiLibjavagiacSo',
-                             'androidCopyX86LibjavagiacSo', 'androidCopyX86_64LibjavagiacSo', 'androidCopyArm64LibjavagiacSo', 'giac-android:assemble']) {
+tasks.register('androidAar') {
+    dependsOn = ['giac-android:copyLibcShared', 'androidCopyEabiLibjavagiacSo',
+            'androidCopyX86LibjavagiacSo', 'androidCopyX86_64LibjavagiacSo', 'androidCopyArm64LibjavagiacSo', 'giac-android:assemble']
     description 'Creates .aar package'
 }
 

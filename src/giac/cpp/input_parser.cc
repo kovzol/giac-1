@@ -4716,7 +4716,6 @@ int yyparse ();
 #endif
 #endif /* ! YYPARSE_PARAM */
 
-
 /*----------.
 | yyparse.  |
 `----------*/
@@ -4745,6 +4744,7 @@ yyparse (scanner)
 {
 /* The lookahead symbol.  */
 int yychar;
+//yydebug=1;
 
 /* The semantic value of the lookahead symbol.  */
 YYSTYPE yylval;
@@ -5468,10 +5468,10 @@ yyreduce:
 	// CERR << python_compat(giac_yyget_extra(scanner)) << tmp << '\n';
 	(yyval) = symbolic(*(yyvsp[(1) - (4)])._FUNCptr,tmp);
         const giac::context * contextptr = giac_yyget_extra(scanner);
-	if (*(yyvsp[(1) - (4)])._FUNCptr==at_maple_mode ||*(yyvsp[(1) - (4)])._FUNCptr==at_xcas_mode ){
+	if ((yyvsp[(3) - (4)]).type==_INT_ && (*(yyvsp[(1) - (4)])._FUNCptr==at_maple_mode ||*(yyvsp[(1) - (4)])._FUNCptr==at_xcas_mode) ){
           xcas_mode(contextptr)=(yyvsp[(3) - (4)]).val;
         }
-        if (*(yyvsp[(1) - (4)])._FUNCptr==at_python_compat)
+        if ((yyvsp[(3) - (4)]).type==_INT_ && *(yyvsp[(1) - (4)])._FUNCptr==at_python_compat)
           python_compat(contextptr)=(yyvsp[(3) - (4)]).val;
 	if (*(yyvsp[(1) - (4)])._FUNCptr==at_user_operator){
           user_operator((yyvsp[(3) - (4)]),contextptr);
@@ -5678,8 +5678,8 @@ yyreduce:
           if (rg){
             if (f.type!=_VECT) f=makesequence(0,f);
             vecteur v=*f._VECTptr;
-            if (v.size()>=2) f=makesequence(v.front(),v[1]-1);
             if (v.size()==3) inc=v[2];
+            if (v.size()>=2) f=makesequence(v.front(),v[1]-inc);
           }
           if (inc.type==_INT_  && inc.val!=0 && f.type==_VECT && f._VECTptr->size()==2 && (rg || ((yyvsp[(4) - (7)]).is_symb_of_sommet(at_interval) 
 	  // && f._VECTptr->front().type==_INT_ && f._VECTptr->back().type==_INT_ 
