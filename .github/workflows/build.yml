@@ -119,8 +119,13 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: prerequisites
-      run: brew install coreutils openjdk@17
+      run: brew install coreutils java11
       # run: brew install gmp mpfr coreutils java11
+    - name: config
+      run: |
+        sudo ln -sfn /opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-11.jdk
+        echo 'export PATH="/opt/homebrew/opt/openjdk@11/bin:$PATH"' >> /Users/runner/.bash_profile
+        export CPPFLAGS="-I/opt/homebrew/opt/openjdk@11/include"
     - name: build
       run: ./gradlew javagiacOsx_amd64SharedLibrary
 
