@@ -119,7 +119,7 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: prerequisites
-      run: brew install coreutils java11
+      run: brew install coreutils java15
       # run: brew install gmp mpfr coreutils java11
     - name: build
       run: ./gradlew javagiacOsx_amd64SharedLibrary
@@ -144,30 +144,31 @@ jobs:
     - name: build
       run: mkdir cbuild && cd cbuild && CC=clang CXX=clang++ cmake -G "MinGW Makefiles" .. && mingw32-make
 
-  windows_msys2_clang32-native-cmake:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-    - uses: actions/checkout@v1
-    - name: prerequisites
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: CLANG32
-        update: true
-        install: >-
-          base-devel
-    - name: prerequisites2
-      run: |
-          C:\Windows\system32\cmd.exe /D /S /C D:\a\_temp\setup-msys2\msys2.cmd -c "'echo' '[clang32]' >> '/etc/pacman.conf'"
-          C:\Windows\system32\cmd.exe /D /S /C D:\a\_temp\setup-msys2\msys2.cmd -c "'echo' 'Include = /etc/pacman.d/mirrorlist.mingw' >> '/etc/pacman.conf'"
-          C:\Windows\system32\cmd.exe /D /S /C D:\a\_temp\setup-msys2\msys2.cmd -c "'pacman' '--noconfirm' '-Syuu' '--overwrite' '*'"
-          rem C:\Windows\system32\cmd.exe /D /S /C D:\a\_temp\setup-msys2\msys2.cmd -c "'pacman' '--noconfirm' '-S' '--needed' '--overwrite' '*' 'mingw-w64-clang-i686-cc' 'mingw-w64-clang-i686-cmake' 'mingw-w64-clang-i686-make' 'mingw-w64-clang-i686-gmp' 'mingw-w64-clang-i686-mpfr'"
-          C:\Windows\system32\cmd.exe /D /S /C D:\a\_temp\setup-msys2\msys2.cmd -c "'pacman' '--noconfirm' '-S' '--needed' '--overwrite' '*' 'mingw-w64-clang-i686-cc' 'mingw-w64-clang-i686-cmake' 'mingw-w64-clang-i686-make'"
-      shell: cmd
-    - name: build
-      run: mkdir cbuild && cd cbuild && CC=clang CXX=clang++ cmake -G "MinGW Makefiles" .. && mingw32-make
+# This is no longer supported by MSYS2 (CLANG32 has been removed):
+#  windows_msys2_clang32-native-cmake:
+#    runs-on: windows-latest
+#    defaults:
+#      run:
+#        shell: msys2 {0}
+#    steps:
+#    - uses: actions/checkout@v1
+#    - name: prerequisites
+#      uses: msys2/setup-msys2@v2
+#      with:
+#        msystem: CLANG32
+#        update: true
+#        install: >-
+#          base-devel
+#    - name: prerequisites2
+#      run: |
+#          C:\Windows\system32\cmd.exe /D /S /C D:\a\_temp\setup-msys2\msys2.cmd -c "'echo' '[clang32]' >> '/etc/pacman.conf'"
+#          C:\Windows\system32\cmd.exe /D /S /C D:\a\_temp\setup-msys2\msys2.cmd -c "'echo' 'Include = /etc/pacman.d/mirrorlist.mingw' >> '/etc/pacman.conf'"
+#          C:\Windows\system32\cmd.exe /D /S /C D:\a\_temp\setup-msys2\msys2.cmd -c "'pacman' '--noconfirm' '-Syuu' '--overwrite' '*'"
+#          rem C:\Windows\system32\cmd.exe /D /S /C D:\a\_temp\setup-msys2\msys2.cmd -c "'pacman' '--noconfirm' '-S' '--needed' '--overwrite' '*' 'mingw-w64-clang-i686-cc' 'mingw-w64-clang-i686-cmake' 'mingw-w64-clang-i686-make' 'mingw-w64-clang-i686-gmp' 'mingw-w64-clang-i686-mpfr'"
+#          C:\Windows\system32\cmd.exe /D /S /C D:\a\_temp\setup-msys2\msys2.cmd -c "'pacman' '--noconfirm' '-S' '--needed' '--overwrite' '*' 'mingw-w64-clang-i686-cc' 'mingw-w64-clang-i686-cmake' 'mingw-w64-clang-i686-make'"
+#      shell: cmd
+#    - name: build
+#      run: mkdir cbuild && cd cbuild && CC=clang CXX=clang++ cmake -G "MinGW Makefiles" .. && mingw32-make
 
 # Currently broken:
 #  mac-nodejs-npm:
