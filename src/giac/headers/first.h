@@ -21,6 +21,14 @@
 #ifndef _GIAC_FIRST_H_
 #define _GIAC_FIRST_H_
 
+#define INT_MAXSHIFT (sizeof(int)*8-1)
+#define INT_MAXSHIFTM1 (sizeof(int)*8-2)
+
+#if __cplusplus >= 201103L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201103L)
+// post-c++11 functional headers changes, thanks to George Huebner
+#define CPP11
+#endif
+  
 // register is deprecated in c++17
 #define register 
 
@@ -29,7 +37,7 @@
 #undef _GLIBCXX_ASSERTIONS
 #endif
 
-#ifdef NUMWORKS
+#if defined NUMWORKS && !defined SDL_KHICAS
 #define KHICAS 1
 #ifdef NUMWORKS_SLOTBFR
 #define NUMWORKS_SLOTB
@@ -130,7 +138,7 @@ inline Bidon operator << (Bidon,const char *){return Bidon();}
 #define COUT Bidon(0) //std::cout
 #define CERR Bidon(0) //std::cout
 typedef unsigned pid_t;
-double lgamma(double);
+extern "C" double lgamma(double);
 #else // FXCG
 
 #ifdef NSPIRE
@@ -194,11 +202,19 @@ int my_sprintf(char * s, const char * format, ...);
 #ifdef GIAC_HAS_STO_38
 //#define WITH_MYOSTREAM
 #endif
+#ifdef TICE
+#if 0 // if we find out that the OS sprintf is faster than nanoprintf, use it instead
+#include <ti/sprintf.h>
+#else
+// fallback
+#define boot_sprintf sprintf
+#endif
+#endif
 
 #ifdef WITH_MYOSTREAM
 #include "myostream.h"
 #else
-#if defined KHICAS //&& defined STATIC_BUILTIN_LEXER_FUNCTION
+#if defined KHICAS || defined SDL_KHICAS //&& defined STATIC_BUILTIN_LEXER_FUNCTION
 #include "stdstream"
 #define my_ostream stdostream
 #else

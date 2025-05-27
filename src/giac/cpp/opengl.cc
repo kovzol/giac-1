@@ -1188,7 +1188,7 @@ namespace giac {
 	  return 1;
 	case 'C': case 'c': /* screen capture */
 	  if (Opengl3d * gr3 = dynamic_cast<Opengl3d *>(this)){
-	    char * filename = file_chooser(gettext("Export to PNG file"),"*.png","session.png");
+	    const char * filename = file_chooser(gettext("Export to PNG file"),"*.png","session.png");
 	    if(!filename) return 1;
 	    gr3->opengl2png(filename);
 	    return 1;
@@ -4320,6 +4320,11 @@ const char * gettext(const char * s) {
   return s;
 }
 #else // GIAC_GGB
+
+#ifdef SDL_KHICAS
+extern "C" int xcas_python_eval;
+extern "C" char * python_heap;
+#else
 #include "aspen_translate.h"
 bool tri2(const char4 & a,const char4 & b){
   int res= strcmp(a[0],b[0]);
@@ -4360,11 +4365,414 @@ const char * gettext(const char * s) {
 
 int xcas_python_eval=0;
 char * python_heap=0;
+
+#ifdef __EMSCRIPTEN__ // loading state must be done after syncfs
+  void Bfile_WriteFile_OS(char * & buf,const void * ptr,size_t len){
+    memcpy(buf,ptr,len);
+    buf += len;
+  }
+  void Bfile_WriteFile_OS4(char * & buf,size_t n){
+    buf[0]= n>>24;
+    buf[1]= (n>>16) & 0xff;
+    buf[2]= (n & 0xffff)>>8;
+    buf[3]= n & 0xff;
+    buf += 4;
+  }
+  void Bfile_WriteFile_OS2(char * & buf,unsigned short n){
+    buf[0]= n>>8;
+    buf[1]= n & 0xff;
+    buf += 2;
+  }
+
+int char2int(char c){
+  if (c>='0' && c<='9')
+    return c-'0';
+  if (c>='A' && c<='F')
+    return c-'A'+10;
+  if (c>='a' && c<='f')
+    return c-'a'+10;
+  return -1;
+}
+
+const int xwaspy_shift=33; // must be between 32 and 63, reflect in xcas.js and History.cc
+
+void console_log(const char * s){
+  EM_ASM({
+      var value = UTF8ToString($0);
+      console.log(value);
+    },s);
+}
+
+extern "C" int write_file(const char * filename,const char * s,int len){
+  char filen[256]="/data/";
+  if (strncmp(filename,filen,strlen(filen)))
+    strncat(filen,filename,sizeof(filen)-strlen(filen)-1);
+  FILE * f=fopen(filen,"wb");
+  if (!f)
+    return -1;
+  int n=fwrite(s,1,len,f);
+  fprintf(stderr,"write_file %s %i %i\n",filen,len,n);
+  fclose(f);
+  return n;
+}
+
+std::string init_filename;
+// convert URL link to xw or xw.py session
+  // mode==0 save only link.nws, mode==1 save as xw session
+  int save_link(const char * s,const char * filename,int mode){
+    if (!s)
+      return -1;
+    fprintf(stdout,"link=%s\n",s);
+    init_filename=filename;
+    int xcas_mode=0;
+    vector<string> Line; vector<unsigned char> Type;
+    string script,state;
+    // parse s to script,state, Line and Type
+    for (;*s;++s){
+      if (*s=='#')
+	break;
+    }
+    if (!*s) // no & found
+      return -1;
+    for (;*s;){
+      fprintf(stdout,"remaining %s\n",s);
+      string cur;
+      for (++s;*s;++s){
+	if (*s=='&')
+	  break;
+	if (*s=='%' && s[1] && s[2]){
+	  int c1=char2int(s[1]),c2=char2int(s[2]);
+	  if (c1<0 || c2<0)
+	    return -2;
+	  cur += c1*16+c2;
+          s+=2;
+	}
+	else
+	  cur += *s;
+      }
+      fprintf(stdout,"cur=%s\n",cur.c_str());
+#ifdef EMCC2
+      if (cur.size()>=5 && cur.substr(0,4)=="url="){
+	cur=cur.substr(4,cur.size()-4);
+        init_filename=remove_path(cur);
+	fprintf(stdout,"fetch %s to %s\n",cur.c_str(),init_filename.c_str());
+	cur=fetch(cur);
+	fprintf(stdout,"got %s\n",cur.c_str());
+	return write_file(init_filename.c_str(),cur.c_str(),cur.size());
+      }
+      if (cur.size()>=6 && cur.substr(0,5)=="fltk="){
+	cur=cur.substr(5,cur.size()-5);
+	fprintf(stdout,"fltk %s to %s\n",cur.c_str(),filename);
+	return write_file(init_filename.c_str(),cur.c_str(),cur.size());
+      }
+#endif
+      if (!cur.empty() && cur[0]=='+'){
+	fprintf(stdout,"script+=%s\n",cur.c_str());
+	script += cur.substr(1,cur.size()-1) +'\n';
+      }	
+      int pos=cur.find('=');
+      if (pos<0 || pos>=cur.size()){
+	continue;
+      }
+      string cmd=cur.substr(0,pos);
+      string value=cur.substr(pos+1,cur.size()-pos-1);
+      if (cmd=="filename"){
+        if (value[0]=='@'){ // this is the email address of the sender
+          value=value.substr(1,value.size()-1);
+	  if (value.size()>8)
+	    value=value.substr(0,8); // or cut at @?
+          EM_ASM({
+	      document.getElementById('origin').innerHTML=UTF8ToString($0);
+            },value.c_str());
+        }
+#ifdef EMCC2
+        if (value.size()<4 || value.substr(3,value.size()-3)!=".xws")
+          value += ".xws";
+#else
+        if (value.size()<4 || value.substr(3,value.size()-3)!=".xw")
+          value += ".xw";
+#endif
+	init_filename=value;
+	continue;
+      }
+      if (cmd=="radian"){
+	state += "angle_radian:="+value+";";
+	continue;
+      }
+      if (cmd=="python"){
+	state += "python_mode("+value+");";
+	continue;
+      }
+      if (cmd=="xcas" || cmd=="cas" || cmd=="py" || cmd=="micropy"){
+	// skip position x,y,
+	pos=0;
+	for (;pos<value.size();++pos){
+	  if (value[pos]==',')
+	    break;
+	}
+	for (++pos;pos<value.size();++pos){
+	  if (value[pos]==',')
+	    break;
+	}
+	++pos;
+	value=value.substr(pos,value.size()-pos);
+	if (value.size()==0)
+	  continue;
+	if ( (cmd=="xcas" || cmd=="cas") && xcas_mode!=0){
+	  Line.push_back("xcas");
+	  Type.push_back(0);
+	  xcas_mode=0;
+	}
+	if ((cmd=="py" || cmd=="micropy") && xcas_mode==0){
+	  Line.push_back("python");
+	  Type.push_back(0);
+	  xcas_mode=4;
+	}
+	pos=value.find('\n');
+	if (pos>=0 && pos<value.size())
+	  script += value + "\n\n";
+	else {
+	  Line.push_back(value);
+	  Type.push_back(0);
+	}
+	continue;
+      }
+    }
+    int statesize=state.size(),scriptsize=script.size();
+    //
+    int size=2*sizeof(int)+statesize+scriptsize;
+    int n=Line.size(); // number of cmdlines in s
+    for (int i=0;i<n;++i){
+      size += 2*sizeof(short)+2*sizeof(char)+Line[i].size()+1;
+    }
+    char savebuf[size+4];
+#ifdef NUMWORKS
+    char * hFile=savebuf+1;
+#else
+    char * hFile=savebuf;
+#endif
+    // save variables and modes
+    Bfile_WriteFile_OS4(hFile, statesize);
+    Bfile_WriteFile_OS(hFile, state.c_str(), statesize);
+    // save script
+    Bfile_WriteFile_OS4(hFile, scriptsize);
+    Bfile_WriteFile_OS(hFile, script.c_str(), scriptsize);
+    // save console state
+    int pos=1;
+    // save console state
+    for (int i=0;i<n;++i){
+      const char * cur=Line[i].c_str();
+      unsigned short l=strlen(cur);
+      Bfile_WriteFile_OS2(hFile, l);
+      unsigned short s=0; // cursor position
+      Bfile_WriteFile_OS2(hFile, s);
+      unsigned char c=Type[i]; // cur.type;
+      Bfile_WriteFile_OS(hFile, &c, sizeof(c));
+      c=1;//cur.readonly;
+      Bfile_WriteFile_OS(hFile, &c, sizeof(c));
+      unsigned char buf[l+1];
+      buf[l]=0;
+      strcpy((char *)buf,(const char*)cur); 
+      unsigned char *ptr=buf,*strend=ptr+l;
+      for (;ptr<strend;++ptr){
+        if (*ptr==0x9c)
+          *ptr='\n';
+      }
+      Bfile_WriteFile_OS(hFile, buf, l);
+    }
+    char BUF[2]={0,0};
+    Bfile_WriteFile_OS(hFile, BUF, sizeof(BUF));
+#ifdef NUMWORKS
+    savebuf[0]=1;
+#endif
+    int len=hFile-savebuf;
+    if (
+#ifdef XWASPY
+        len<8192
+#else
+        0
+#endif
+        ){
+      // save as an ascii file beginning with #xwaspy
+#ifdef NUMWORKS 
+      --len;
+      char * buf=savebuf+1;
+      int newlen=4*(len+2)/3+11; // 4/3 oldlen + 8(#swaspy\n) +1 + 2 for ending  zeros
+      char tmpbuf[]={(char)0xBA,(char)0xDD,(char)0x0B,(char)0xEE,0,0,'l','i','n','k','.','p','y',0};
+      char newbuf_[newlen+17];
+      memcpy(newbuf_,tmpbuf,sizeof(tmpbuf));
+      char * newbuf=newbuf_+14;
+      strcpy(newbuf,"##xwaspy\n");
+      newbuf[0]=1;
+      hFile=newbuf+9;
+#else
+      char * buf=savebuf;
+      int newlen=4*(len+2)/3+10;
+      char newbuf[newlen];
+      strcpy(newbuf,"#xwaspy\n");
+      hFile=newbuf+8;
+#endif
+      for (int i=0;i<len;i+=3,hFile+=4){
+        // keep space \n and a..z chars
+        char c;
+        while (i<len && ((c=buf[i])==' ' || c=='\n' || c=='{' || c==')' || c==';' || c==':' || c=='\n' || (c>='a' && c<='z')) ){
+          if (c==')')
+            c='}';
+          if (c==':')
+            c='~';
+          if (c==';')
+            c='|';
+          *hFile=c;
+          ++hFile;
+          ++i;
+        }
+        unsigned char a=buf[i],b=i+1<len?buf[i+1]:0,C=i+2<len?buf[i+2]:0;
+        hFile[0]=xwaspy_shift+(a>>2);
+        hFile[1]=xwaspy_shift+(((a&3)<<4)|(b>>4));
+        hFile[2]=xwaspy_shift+(((b&0xf)<<2)|(C>>6));
+        hFile[3]=xwaspy_shift+(C&0x3f);
+      }
+      //*hFile=0; ++hFile; 
+      //*hFile=0; ++hFile;      
+      int totalsize=hFile-newbuf;
+      if (mode==1 && filename!=init_filename)
+        write_file(filename,newbuf,totalsize);
+#ifdef NUMWORKS 
+      // create link.nws
+      // header BA DD 0B EE, length 2 bytes then content then 00 00
+      newbuf_[5]=(totalsize+11)/256;
+      newbuf_[4]=(totalsize+11)%256;
+#endif
+      hFile[0]=0; hFile[1]=0; hFile[2]=0;
+#ifdef NUMWORKS 
+      if (mode==1)
+        write_file(init_filename.c_str(),newbuf,totalsize);
+      return write_file("link.nws",newbuf_,totalsize+17);
+#else
+      write_file(init_filename.c_str(),newbuf,totalsize);
+#endif
+    }
+    else {
+      if (filename!=init_filename)
+        write_file(filename,savebuf,len);
+      return write_file(init_filename.c_str(),savebuf,len);
+    }
+  }
+
+void save_link_as_session(const char * link){
+#ifdef EMCC2
+  save_link(link,"session.xws",1);
+#else
+  save_link(link,"session.xw",1);
+#endif
+  // ext_main(); // does not work
+}
+
+void deleteAllFilesInPath(const char* pathToRM) {
+  console_log(pathToRM);
+  DIR  *d;
+  struct dirent *dir;
+  d = opendir(pathToRM);
+  if (d)
+  {
+    while ((dir = readdir(d)) != NULL)
+    {
+    	std::string fullpath(pathToRM);
+    	fullpath += '/' + std::string(dir->d_name);
+
+    	if ((dir->d_type == DT_DIR) && strcmp(dir->d_name,".")!=0 && strcmp(dir->d_name,"..")!=0) {
+    	  deleteAllFilesInPath(fullpath.c_str());
+    	} else if (dir->d_type != DT_DIR) {
+    	  if (remove(fullpath.c_str()) != 0){
+    	    console_log("FAILED to delete file");
+	    console_log(dir->d_name);
+	  }
+    	}
+    }
+
+    closedir(d);
+  }
+}
+
+void dir(const char * dirname){
+  console_log((std::string("ls ")+dirname).c_str());
+  DIR *dp;
+  struct dirent *ep;  
+  dp = opendir (dirname);
+  if (dp != NULL){
+    int t;
+    while ( (ep = readdir (dp)) ){
+      if (strlen(ep->d_name)>=1 && ep->d_name[0]=='.')
+	continue;
+      if ((ep->d_type == DT_DIR) && strcmp(ep->d_name,".")!=0 && strcmp(ep->d_name,"..")!=0) {
+    	std::string fullpath(dirname);
+    	fullpath += '/' + std::string(ep->d_name);
+	dir(fullpath.c_str());
+      }
+      console_log(ep->d_name);
+    }
+    closedir (dp);
+  }
+}
+
+
+int init_fs(){
+  // init filesystem
+  int res=EM_ASM_INT({
+      FS.mkdir('/data');
+      FS.mount(IDBFS, { autoPersist: true }, '/data');
+      // check if the link has additional data
+      let s=""+window.location;
+      console.log("init_fs with url ",s);
+      let pos=s.search('&');
+      if (pos>0){
+        console.log("link at",pos);
+        if (1 ||
+#ifdef EMCC2
+            confirm('Copy link to session.xws?')
+#else
+            confirm('Copy link to session.xw?')
+#endif
+            ){
+	  ccall('save_link_as_session',null,['string'],[s]);
+	  FS.syncfs(true,function (err) {
+	      console.log('syncfs error=',err);
+              if (err){ alert('Error syncing filesystem '+err); return -1;}
+	    });
+	  return 1;
+	}
+      }
+      else {
+	pos=s.search('#clear');
+        if (pos>0 && confirm('Clear all sessions?')){
+          FS.syncfs(true,function (err) {
+              console.log('syncfs error=',err);
+              if (err){ alert('Error syncing filesystem '+err); return -1;}
+            });
+          ccall('deleteAllFilesInPath',null,['string'],['/data']);
+          FS.syncfs(function (err) {
+              console.log('syncfs delete error=',err);
+              if (err){  alert('Error deleting filesystem '+err); return -1; }
+            });
+        }
+      }
+      return 0;
+    });
+  return res;
+}
+#endif // _EMSCRIPTEN__
+
+#endif // ndef SDL_KHICAS
+
 #ifdef MICROPY_LIB
 extern "C" {
   int do_file(const char *file){
     return 0;
   }
+#ifdef SDL_KHICAS
+  char * micropy_init(int stack_size,int heap_size);
+  int micropy_eval(const char * line);
+#else
   char * mp_js_init(int heap_size);
   char * micropy_init(int stack_size,int heap_size){
     return mp_js_init(heap_size);
@@ -4373,6 +4781,7 @@ extern "C" {
   int micropy_eval(const char * line){
     return mp_js_do_str(line);
   }
+#endif
   void  mp_deinit();
   void mp_stack_ctrl_init();
   extern int parser_errorline,parser_errorcol;
@@ -4410,7 +4819,7 @@ int micropy_ck_eval(const char *line){
 #endif
   return micropy_eval(line);
 }
-#endif
+#endif // MICROPY_LIB
 
 
 #endif // GIAC_GGB

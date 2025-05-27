@@ -36,7 +36,7 @@ using namespace std;
 extern "C" int mp_token(const char * line);
 #endif
 
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
 #include "kdisplay.h" // for select_item,
 #if defined MICROPY_LIB || defined HAVE_LIBMICROPYTHON
 extern "C" int xcas_python_eval;
@@ -81,7 +81,7 @@ namespace giac {
   };
 
   const static_help_t static_help[]={
-#if defined NSPIRE_NEWLIB || (defined NUMWORKS && !defined NUMWORKS_SLOTB ) || (!defined RTOS_THREADX && !defined BESTA_OS && !defined GIAC_HAS_STO_38 && !defined(KHICAS) && !defined POCKETCAS)
+#if defined NSPIRE_NEWLIB || (defined NUMWORKS && !defined NUMWORKS_SLOTB ) || ( !defined(KHICAS) && !defined POCKETCAS)
 #include "static_help.h"
 #else
     { "", { "", "", "", "",""}, "", "", "" },
@@ -342,7 +342,7 @@ namespace giac {
     if (l==0) return false;
     if ( (l>2) && (s[0]=='\'') && (s[l-1]=='\'') )
       s=s.substr(1,l-2);
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
     static string res;
     int pos=0,kk,ks=s.size();
     for (;pos<static_help_size;++pos){
@@ -436,7 +436,7 @@ namespace giac {
 	examples=nullstring;
       return true;
     }
-#if defined EMCC || defined EMCC2
+#if (defined EMCC || defined EMCC2) && !defined SDL_KHICAS
     // Find closest string
     syntax=nullstring;
     related=nullstring;
@@ -650,10 +650,18 @@ namespace giac {
   const char default_helpfile[]=giac_aide_location; // help filename
   const int HELP_MAXLENSIZE = 1600; // less than 20 lines of 80 chars
 
+#ifdef TICE
+  string printint(int i) {
+    char s[sizeof("-8388608")];
+    boot_sprintf(s, "%d", i);
+    return s;
+  }
+  
+#else
   string printint(int i){
     if (!i)
       return string("0");
-    if (i<0)
+    if (i<0 && i!=-i)
       return string("-")+printint(-i);      
     int length = (int) std::floor(std::log10((double) i));
 #if defined VISUALC || defined BESTA_OS
@@ -672,6 +680,7 @@ namespace giac {
     return s;
 #endif
   }
+#endif
 
   inline int max(int a,int b,int c){
     if (a>=b){
@@ -773,7 +782,7 @@ namespace giac {
   // FIXME: aide_cas may end with synonyms (# cmd synonym1 ...)
   void readhelp(vector<aide> & v,const char * f_name,int & count,bool warn){
     count=0;
-#if !defined NSPIRE && !defined FXCG && !defined GIAC_HAS_STO_38
+#if !defined NSPIRE && !defined FXCG && !defined GIAC_HAS_STO_38 && !defined KHICAS && !defined SDL_KHICAS
     if (access(f_name,R_OK)){
       if (warn)
 	std::cerr << "Help file " << f_name << " not found" << endl;
@@ -999,7 +1008,7 @@ namespace giac {
     return result;
   }
 
-#if !defined(NSPIRE_NEWLIB) && !defined(RTOS_THREADX) && !defined(EMCC) && !defined(EMCC2) &&!defined(NSPIRE) && !defined FXCG && !defined(KHICAS) && !defined GIAC_HAS_STO_38
+#if !defined(NSPIRE_NEWLIB) && !defined(RTOS_THREADX) && !defined(EMCC) && !defined(NSPIRE) && !defined FXCG && !defined(KHICAS) && !defined GIAC_HAS_STO_38
   multimap<string,string> html_mtt,html_mall;
   std::vector<std::string> html_vtt,html_vall;
 
@@ -1238,7 +1247,7 @@ namespace giac {
     return 0;
   }
 
-#if ! (defined VISUALC || defined BESTA_OS || defined FREERTOS || defined NSPIRE || defined FXCG || defined NSPIRE_NEWLIB || defined(KHICAS)) 
+#if ! (defined VISUALC || defined BESTA_OS || defined FREERTOS || defined NSPIRE || defined FXCG || defined NSPIRE_NEWLIB || defined(KHICAS) || defined SDL_KHICAS) 
 #if defined WIN32 || !defined DT_DIR
   static int dir_select (const struct dirent *d){
     string s(d->d_name);
@@ -1388,7 +1397,7 @@ alphasort (const struct dirent **a, const struct dirent **b)
 #endif
 
   void find_all_index(const std::string & subdir,multimap<std::string,std::string> & mtt,multimap<std::string,std::string> & mall){
-#if defined GNUWINCE || defined __ANDROID__ || defined EMCC|| defined EMCC2 || defined NSPIRE_NEWLIB || defined FXCG || defined KHICAS
+#if defined GNUWINCE || defined __ANDROID__ || defined EMCC|| defined EMCC2 || defined NSPIRE_NEWLIB || defined FXCG || defined KHICAS || defined SDL_KHICAS
     return;
 #else
     // cerr << "HTML help Scanning " << subdir << endl;
@@ -1504,12 +1513,16 @@ alphasort (const struct dirent **a, const struct dirent **b)
     char buf[BUFFER_SIZE];
 #endif
     ifstream if_mtt(filename);
+    if (verbose){
+      bool b=if_mtt && !if_mtt.eof();
+      cout << "get_index_from_cache " << filename << (b?" OK":" BAD") << "\n";
+    }
     int n=0;
     while (if_mtt && !if_mtt.eof()){
       if_mtt.getline(buf,BUFFER_SIZE,char(0xa4)); // was '¤', utf8 not compatible, octal \244
       if (!if_mtt || if_mtt.eof()){
 	if (verbose)
-	  cerr << "// Read " << n << " entries from cache " << filename << endl;
+	  cout << "// Read " << n << " entries from cache " << filename << endl;
 #if defined VISUALC || defined BESTA_OS || defined FREERTOS
 	delete [] buf;
 #endif
@@ -1524,6 +1537,7 @@ alphasort (const struct dirent **a, const struct dirent **b)
 	return false;
       }
       multi.insert(pair<string,string>(first,buf));
+#ifndef EMCC2
       if (!(n%100)){ // check every 100 links if link exists
 	first=buf;
 	int l=int(first.size()),j;
@@ -1551,6 +1565,7 @@ alphasort (const struct dirent **a, const struct dirent **b)
 	  return false;
 	}
       }
+#endif
       ++n;
       if_mtt.getline(buf,BUFFER_SIZE,'\n');
     }
@@ -1611,8 +1626,6 @@ alphasort (const struct dirent **a, const struct dirent **b)
     }
     if (access(html_help_dir.c_str(),R_OK) && xcasroot.size()>4 && xcasroot.substr(xcasroot.size()-4,4)=="bin/")
       html_help_dir=xcasroot.substr(0,xcasroot.size()-4)+"share/giac/doc/";
-    if (access(html_help_dir.c_str(),R_OK))      
-      cerr << "Unable to open HTML doc directory " << html_help_dir << endl;
     html_help_dir += find_lang_prefix(language);
 #ifdef WIN32
     string html_help_dir_save=html_help_dir;
@@ -1622,7 +1635,16 @@ alphasort (const struct dirent **a, const struct dirent **b)
     html_mall.clear();
     html_vall.clear();
     // Get indices from file cache if it exists
-    if (!force_rebuild && !access((html_help_dir+"html_mtt").c_str(),R_OK) && !access((html_help_dir+"html_mall").c_str(),R_OK) && !access((html_help_dir+"html_vall").c_str(),R_OK)){
+#ifdef EMCC2
+    int b1=1,b2=1,b3=1;
+    printf("html_help_dir=%s mtt=%i mall=%i vall=%i\n",html_help_dir.c_str(),b1,b2,b3);
+#else
+    int b1=!access((html_help_dir+"html_mtt").c_str(),R_OK), b2=!access((html_help_dir+"html_mall").c_str(),R_OK), b3=!access((html_help_dir+"html_vall").c_str(),R_OK);
+    if (access(html_help_dir.c_str(),R_OK))      
+      cerr << "Unable to open HTML doc directory " << html_help_dir << endl;
+#endif
+    if (!force_rebuild && b1 && b2 && b3){
+      cout << "Reading from cache "<< html_help_dir << "\n";
       if (get_index_from_cache((html_help_dir+"html_mtt").c_str(),html_mtt,verbose)&&
 	  get_index_from_cache((html_help_dir+"html_mall").c_str(),html_mall,verbose)&&
 	  get_index_from_cache((html_help_dir+"html_vall").c_str(),html_vall,verbose) )

@@ -1,9 +1,12 @@
 /* -*- mode:C++ ; compile-command: "g++ -I.. -I../include -I.. -g -c -fno-strict-aliasing -DGIAC_GENERIC_CONSTANTS -DHAVE_CONFIG_H -DIN_GIAC -Wall cocoa.cc" -*- */
+// Use GIAC_DEBUG_TDEG_T64 to debug potential memory errors with large number of variables
 // Thanks to Zoltan Kovacs for motivating this work, in order to improve geogebra theorem proving
 // Special thanks to Anna M. Bigatti from CoCoA team for insightfull discussions on how to choose an order for elimination. This file name is kept to remind that the first versions of giac were using CoCoA for Groebner basis computations, before a standalone implementation.
-#include "giacPCH.h"
-//#define EMCC
-// vector class version 1 by Agner Fog https://github.com/vectorclass
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+// vector class by Agner Fog https://github.com/vectorclass
 // this might be faster for CPU with AVX512DQ instruction set
 // (fast multiplication of Vec4q)
 #if defined HAVE_VCL2_VECTORCLASS_H 
@@ -13,6 +16,11 @@
 #define CPU_SIMD
 #endif
 #endif
+
+#include "modint.h"
+
+#include "giacPCH.h"
+//#define EMCC
 
 
 // if GIAC_SHORTSHIFTTYPE is defined, sparse matrix is using shift index
@@ -96,7 +104,7 @@ using namespace std;
 
 #include <iostream>
 //#include <fstream>
-#if !defined FXCG && !defined KHICAS
+#if !defined FXCG && !defined KHICAS && !defined SDL_KHICAS
 #include <iomanip>
 #endif
 #include "cocoa.h"
@@ -117,291 +125,20 @@ using namespace std;
 #undef x86_64
 #endif
 
-typedef int modint;
-typedef longlong modint2;
-inline longlong extend(int n){ return n;}
-inline int shrink(longlong n){ return n;}
-inline int shrink(int n){ return n;}
-
-struct mod4int {
-  int tab[4];
-};
-inline bool operator <(const mod4int & a,int b){
-  return a.tab[0]<b && a.tab[1]<b && a.tab[2]<b && a.tab[3]<b;
-}
-inline bool operator >(const mod4int & a,int b){
-  return a.tab[0]>b && a.tab[1]>b && a.tab[2]>b && a.tab[3]>b;
-}
-inline bool operator ==(const mod4int & a,const mod4int & b){
-  return a.tab[0]==b.tab[0] && a.tab[1]==b.tab[1] && a.tab[2]==b.tab[2] && a.tab[3]==b.tab[3];
-}
-inline bool operator !=(const mod4int & a,const mod4int & b){
-  return !(a==b);
-}
-
-inline bool operator ==(const mod4int & a,int  b){
-  return a.tab[0]==b && a.tab[1]==b && a.tab[2]==b && a.tab[3]==b;
-}
-inline bool operator !=(const mod4int & a,int  b){
-  return !(a==b);
-}
-
-template<class modint_t> modint_t create(int n);
-inline mod4int mkmod4int(int n){ mod4int res={n,n,n,n}; return res; }
-template<> mod4int create(int n){ return mkmod4int(n);}
-template<> modint create(int n){ return n;}
-template<> modint2 create(int n){ return n;}
-
-
-ostream & operator << (ostream & os,const mod4int & a){
-  return os<< "(" << a.tab[0] << ","<<a.tab[1] << "," << a.tab[2] << "," << a.tab[3] << ")";
-}
-inline mod4int operator + (const mod4int & a,const mod4int & b){
-  mod4int res={a.tab[0]+b.tab[0],a.tab[1]+b.tab[1],a.tab[2]+b.tab[2],a.tab[3]+b.tab[3]};
-  return res;  
-}
-inline mod4int operator += (mod4int & a,const mod4int & b){
-  a.tab[0]+=b.tab[0];
-  a.tab[1]+=b.tab[1];
-  a.tab[2]+=b.tab[2];
-  a.tab[3]+=b.tab[3];
-  return a;  
-}
-inline mod4int operator - (const mod4int & a,const mod4int & b){
-  mod4int res={a.tab[0]-b.tab[0],a.tab[1]-b.tab[1],a.tab[2]-b.tab[2],a.tab[3]-b.tab[3]};
-  return res;  
-}
-inline mod4int operator -= (mod4int & a,const mod4int & b){
-  a.tab[0]-=b.tab[0];
-  a.tab[1]-=b.tab[1];
-  a.tab[2]-=b.tab[2];
-  a.tab[3]-=b.tab[3];
-  return a;  
-}
-inline mod4int operator - (const mod4int & b){
-  mod4int res={-b.tab[0],-b.tab[1],-b.tab[2],-b.tab[3]};
-  return res;  
-}
-inline mod4int operator * (const mod4int & a,const mod4int & b){
-  mod4int res={a.tab[0]*b.tab[0],a.tab[1]*b.tab[1],a.tab[2]*b.tab[2],a.tab[3]*b.tab[3]};
-  return res;  
-}
-inline mod4int operator *= (mod4int & a,const mod4int & b){
-  a.tab[0]*=b.tab[0];
-  a.tab[1]*=b.tab[1];
-  a.tab[2]*=b.tab[2];
-  a.tab[3]*=b.tab[3];
-  return a;  
-}
-inline mod4int operator * (const mod4int & a,const modint & b){
-  mod4int res={a.tab[0]*b,a.tab[1]*b,a.tab[2]*b,a.tab[3]*b};
-  return res;  
-}
-inline mod4int operator * (const modint & b,const mod4int & a){
-  mod4int res={a.tab[0]*b,a.tab[1]*b,a.tab[2]*b,a.tab[3]*b};
-  return res;  
-}
-inline mod4int operator >> (const mod4int & a,unsigned b){
-  mod4int res={a.tab[0]>>b,a.tab[1]>>b,a.tab[2]>>b,a.tab[3]>>b};
-  return res;  
-}
-inline mod4int operator << (const mod4int & a,unsigned b){
-  mod4int res={a.tab[0]<<b,a.tab[1]<<b,a.tab[2]<<b,a.tab[3]<<b};
-  return res;  
-}
-inline mod4int operator & (const mod4int & a,int b){
-  mod4int res={a.tab[0]&b,a.tab[1]&b,a.tab[2]&b,a.tab[3]&b};
-  return res;  
-}
-inline mod4int operator & (const mod4int & a,const mod4int & b){
-  mod4int res={a.tab[0]&b.tab[0],a.tab[1]&b.tab[1],a.tab[2]&b.tab[2],a.tab[3]&b.tab[3]};
-  return res;  
-}
-inline mod4int operator / (const mod4int & a,const mod4int & b){
-  mod4int res={a.tab[0]/b.tab[0],a.tab[1]/b.tab[1],a.tab[2]/b.tab[2],a.tab[3]/b.tab[3]};
-  return res;  
-}
-inline mod4int operator % (const mod4int & a,const mod4int & b){
-  mod4int res={a.tab[0]%b.tab[0],a.tab[1]%b.tab[1],a.tab[2]%b.tab[2],a.tab[3]%b.tab[3]};
-  return res;  
-}
-inline mod4int operator / (const mod4int & a,const modint & b){
-  mod4int res={a.tab[0]/b,a.tab[1]/b,a.tab[2]/b,a.tab[3]/b};
-  return res;  
-}
-inline mod4int operator % (const mod4int & a,const modint & b){
-  mod4int res={a.tab[0]%b,a.tab[1]%b,a.tab[2]%b,a.tab[3]%b};
-  return res;  
-}
-inline mod4int smod(const mod4int & a,const mod4int & b){
-  mod4int res={giac::smod(a.tab[0],b.tab[0]),giac::smod(a.tab[1],b.tab[1]),giac::smod(a.tab[2],b.tab[2]),giac::smod(a.tab[3],b.tab[3])};
-  return res;  
-}
-inline mod4int shrink(const mod4int & a){ return a; }
-
-inline bool is_zero(mod4int u){
-  return u.tab[0]==0 && u.tab[1]==0 && u.tab[2]==0 && u.tab[3]==0;
-}
-
-struct mod4int2 {
-  longlong tab[4];
-};
-inline mod4int2 mkmod4int2(int n){ mod4int2 res={n,n,n,n}; return res; }
-template<> mod4int2 create(int n){ return mkmod4int2(n);}
-inline mod4int2 extend(const mod4int & a){
-  mod4int2 res={a.tab[0],a.tab[1],a.tab[2],a.tab[3]};
-  return res;
-}
-inline mod4int shrink(const mod4int2 & a){
-  mod4int res={shrink(a.tab[0]),shrink(a.tab[1]),shrink(a.tab[2]),shrink(a.tab[3])};
-  return res;
-}
-inline bool is_zero(mod4int2 u){
-  return u.tab[0]==0 && u.tab[1]==0 && u.tab[2]==0 && u.tab[3]==0;
-}
-
-inline mod4int2 operator + (const mod4int2 & a,const mod4int2 & b){
-  mod4int2 res={a.tab[0]+b.tab[0],a.tab[1]+b.tab[1],a.tab[2]+b.tab[2],a.tab[3]+b.tab[3]};
-  return res;  
-}
-inline mod4int2 operator + (const mod4int2 & a,const mod4int & b){
-  return a+extend(b);
-}
-inline mod4int2 operator + (const mod4int & a,const mod4int2 & b){
-  return extend(a)+b;
-}
-inline mod4int2 operator += (mod4int2 & a,const mod4int & b){
-  a.tab[0]+=b.tab[0];
-  a.tab[1]+=b.tab[1];
-  a.tab[2]+=b.tab[2];
-  a.tab[3]+=b.tab[3];
-  return a;  
-}
-inline mod4int2 operator += (mod4int2 & a,const mod4int2 & b){
-  a.tab[0]+=b.tab[0];
-  a.tab[1]+=b.tab[1];
-  a.tab[2]+=b.tab[2];
-  a.tab[3]+=b.tab[3];
-  return a;  
-}
-inline mod4int2 operator - (const mod4int2 & a,const mod4int2 & b){
-  mod4int2 res={a.tab[0]-b.tab[0],a.tab[1]-b.tab[1],a.tab[2]-b.tab[2],a.tab[3]-b.tab[3]};
-  return res;  
-}
-inline mod4int2 operator - (const mod4int2 & a,const mod4int & b){
-  return a-extend(b);
-}
-inline mod4int2 operator - (const mod4int & a,const mod4int2 & b){
-  return extend(a)-b;
-}
-inline mod4int2 operator - (const mod4int2 & b){
-  mod4int2 res={-b.tab[0],-b.tab[1],-b.tab[2],-b.tab[3]};
-  return res;  
-}
-inline mod4int2 operator -= (mod4int2 & a,const mod4int & b){
-  a.tab[0]-=b.tab[0];
-  a.tab[1]-=b.tab[1];
-  a.tab[2]-=b.tab[2];
-  a.tab[3]-=b.tab[3];
-  return a;  
-}
-inline mod4int2 operator -= (mod4int2 & a,const mod4int2 & b){
-  a.tab[0]-=b.tab[0];
-  a.tab[1]-=b.tab[1];
-  a.tab[2]-=b.tab[2];
-  a.tab[3]-=b.tab[3];
-  return a;  
-}
-inline mod4int2 operator * (const mod4int2 & a,const mod4int2 & b){
-  mod4int2 res={a.tab[0]*b.tab[0],a.tab[1]*b.tab[1],a.tab[2]*b.tab[2],a.tab[3]*b.tab[3]};
-  return res;  
-}
-inline mod4int2 operator * (const mod4int2 & a,const mod4int & b){
-  return a*extend(b);
-}
-inline mod4int2 operator * (const mod4int & a,const mod4int2 & b){
-  return extend(a)*b;
-}
-inline mod4int2 operator * (const modint2 & b,const mod4int2 & a){
-  mod4int2 res={a.tab[0]*b,a.tab[1]*b,a.tab[2]*b,a.tab[3]*b};
-  return res;  
-}
-inline mod4int2 operator * (const mod4int2 & a,const modint2 & b){
-  mod4int2 res={a.tab[0]*b,a.tab[1]*b,a.tab[2]*b,a.tab[3]*b};
-  return res;  
-}
-inline mod4int2 operator >> (const mod4int2 & a,unsigned b){
-  mod4int2 res={a.tab[0]>>b,a.tab[1]>>b,a.tab[2]>>b,a.tab[3]>>b};
-  return res;  
-}
-inline mod4int2 operator << (const mod4int2 & a,unsigned b){
-  mod4int2 res={a.tab[0]<<b,a.tab[1]<<b,a.tab[2]<<b,a.tab[3]<<b};
-  return res;  
-}
-inline mod4int2 operator & (const mod4int2 & a,modint2 b){
-  mod4int2 res={a.tab[0]&b,a.tab[1]&b,a.tab[2]&b,a.tab[3]&b};
-  return res;  
-}
-inline mod4int2 operator & (const mod4int2 & a,const mod4int2 & b){
-  mod4int2 res={a.tab[0]&b.tab[0],a.tab[1]&b.tab[1],a.tab[2]&b.tab[2],a.tab[3]&b.tab[3]};
-  return res;  
-}
-inline mod4int2 operator / (const mod4int2 & a,const mod4int2 & b){
-  mod4int2 res={a.tab[0]/b.tab[0],a.tab[1]/b.tab[1],a.tab[2]/b.tab[2],a.tab[3]/b.tab[3]};
-  return res;  
-}
-inline mod4int2 operator % (const mod4int2 & a,const mod4int2 & b){
-  mod4int2 res={a.tab[0]%b.tab[0],a.tab[1]%b.tab[1],a.tab[2]%b.tab[2],a.tab[3]%b.tab[3]};
-  return res;  
-}
-inline mod4int operator % (const mod4int2 & a,const mod4int & b){
-  mod4int res={(modint)(a.tab[0]%b.tab[0]),(modint)(a.tab[1]%b.tab[1]),(modint)(a.tab[2]%b.tab[2]),(modint)(a.tab[3]%b.tab[3])};
-  return res;  
-}
-inline mod4int operator % (longlong a,const mod4int & b){
-  mod4int res={(modint)(a%b.tab[0]),(modint)(a%b.tab[1]),(modint)(a%b.tab[2]),(modint)(a%b.tab[3])};
-  return res;  
-}
-inline mod4int2 operator %= (mod4int2 & a,const mod4int & b){
-  a.tab[0]%=b.tab[0];
-  a.tab[1]%=b.tab[1];
-  a.tab[2]%=b.tab[2];
-  a.tab[3]%=b.tab[3];
-  return a;  
-}
-inline mod4int2 operator / (const mod4int2 & a,const modint2 & b){
-  mod4int2 res={a.tab[0]/b,a.tab[1]/b,a.tab[2]/b,a.tab[3]/b};
-  return res;  
-}
-inline mod4int2 operator % (const mod4int2 & a,const modint2 & b){
-  mod4int2 res={a.tab[0]%b,a.tab[1]%b,a.tab[2]%b,a.tab[3]%b};
-  return res;  
-}
-inline mod4int2 operator / (const mod4int2 & a,const modint & b){
-  mod4int2 res={a.tab[0]/b,a.tab[1]/b,a.tab[2]/b,a.tab[3]/b};
-  return res;  
-}
-inline mod4int operator % (const mod4int2 & a,const modint & b){
-  mod4int res={(modint)(a.tab[0]%b),(modint)(a.tab[1]%b),(modint)(a.tab[2]%b),(modint)(a.tab[3]%b)};
-  return res;  
-}
-inline mod4int smod(const mod4int2 & a,const mod4int & b){
-  mod4int res={giac::smod(a.tab[0],b.tab[0]),giac::smod(a.tab[1],b.tab[1]),giac::smod(a.tab[2],b.tab[2]),giac::smod(a.tab[3],b.tab[3])};
-  return res;  
-}
 inline mod4int modulo(mpz_t & z,const mod4int & m){
   mod4int res={giac::modulo(z,m.tab[0]),giac::modulo(z,m.tab[1]),giac::modulo(z,m.tab[2]),giac::modulo(z,m.tab[3])};
   return res;
 }
-mod4int invmod(const mod4int &a,const mod4int & p){
+inline mod4int invmod(const mod4int &a,const mod4int & p){
   mod4int res={giac::invmod(a.tab[0],p.tab[0]),
     giac::invmod(a.tab[1],p.tab[1]),
     giac::invmod(a.tab[2],p.tab[2]),
     giac::invmod(a.tab[3],p.tab[3])};
   return res;
 }
-
-
+std::ostream & operator << (std::ostream & os,const mod4int & a){
+  return os<< "(" << a.tab[0] << ","<<a.tab[1] << "," << a.tab[2] << "," << a.tab[3] << ")";
+}
 
 #ifndef NO_NAMESPACE_GIAC
 namespace giac {
@@ -789,7 +526,7 @@ namespace giac {
     return a.second<b.second;
   }
   
-#if !defined CAS38_DISABLED && !defined FXCG && !defined KHICAS
+#if !defined CAS38_DISABLED && !defined FXCG && !defined KHICAS && !defined SDL_KHICAS
   //#define GBASIS_SELECT_TOTAL_DEGREE
 #if GROEBNER_VARS!=15 && !defined BIGENDIAN // double revlex ordering is not compatible with indices swapping for tdeg_t64
 #define GBASIS_SWAP 
@@ -1067,7 +804,7 @@ namespace giac {
       }
     }
     ~tdeg_t64(){
-      if (tab[0]%2 && ui){
+      if ((tab[0]%2) && ui){
 #ifdef ATOMIC
 	if (atomic_fetch_add((atomic<longlong> *) ui,-1)==0){
 	  free(ui);
@@ -1446,6 +1183,12 @@ namespace giac {
 #endif
       return x=x+y;
     }
+#ifdef GIAC_DEBUG_TDEG_T64
+    if ((y.tab[0]%2)){
+      y.dbgprint();
+      COUT << "erreur" << '\n';
+    }
+#endif
 #endif    
 #if 1
     ulonglong *xtab=(ulonglong *)&x,*ytab=(ulonglong *)&y;
@@ -1490,7 +1233,7 @@ namespace giac {
     return res;
   }
   
-  tdeg_t64 operator + (const tdeg_t64 & x,const tdeg_t64 & y){
+  tdeg_t64 operator + (const tdeg_t64 & x,const tdeg_t64 & y){ 
 #ifdef GIAC_64VARS
     if (x.tab[0]%2){
 #ifdef GIAC_DEBUG_TDEG_T64
@@ -1500,6 +1243,12 @@ namespace giac {
       return dynamic_plus(x,y);
     }
 #endif    
+#ifdef GIAC_DEBUG_TDEG_T64
+    if (y.tab[0]%2){
+      y.dbgprint();
+      COUT << "erreur" << '\n';
+    }
+#endif
     tdeg_t64 res(x);
     return res += y;
 #if 1
@@ -1596,7 +1345,13 @@ namespace giac {
       res.compute_degs();
       return res;
     }
+#ifdef GIAC_DEBUG_TDEG_T64
+    if ((y.tab[0]%2)){
+      y.dbgprint();
+      COUT << "erreur" << '\n';
+    }
 #endif    
+#endif // GIAC_64VARS   
     tdeg_t64 res;
 #if 1
     ulonglong *xtab=(ulonglong *)&x,*ytab=(ulonglong *)&y,*ztab=(ulonglong *)&res;
@@ -5017,7 +4772,7 @@ This will be performed only in case of success (i.e. the leading will be reduced
       }      
     }
 #else
-    vector< map<tdeg_t,modint_t,tdeg_t_sort_t<tdeg_t>> > mapremcoeffs;
+    vector< map<tdeg_t,modint_t,tdeg_t_sort_t<tdeg_t> > > mapremcoeffs;
     if (remcoeffsptr && usemap){
       tdeg_t_sort_t<tdeg_t> obj(rem.order);
       map<tdeg_t,modint_t,tdeg_t_sort_t<tdeg_t> > m(obj);
@@ -8500,12 +8255,13 @@ This will be performed only in case of success (i.e. the leading will be reduced
 
   // create matrix from list of coefficients and bitmap of non-zero positions
   // M must already have been created with the right number of rows
-  void create_matrix(const vector<modint> & lescoeffs,const unsigned * bitmap,unsigned bitmapcols,const vector<used_t> & used,vector< vector<modint> > & M){
+  template<class modint_t>
+  void create_matrix(const vector<modint_t> & lescoeffs,const unsigned * bitmap,unsigned bitmapcols,const vector<used_t> & used,vector< vector<modint_t> > & M){
     unsigned nrows=unsigned(M.size());
     int ncols=0;
     vector<used_t>::const_iterator ut=used.begin(),utend=used.end();
     unsigned jend=unsigned(utend-ut);
-    vector<modint>::const_iterator it=lescoeffs.begin();
+    typename vector<modint_t>::const_iterator it=lescoeffs.begin();
     for (;ut!=utend;++ut){
       ncols += *ut;
     }
@@ -8514,7 +8270,7 @@ This will be performed only in case of success (i.e. the leading will be reduced
       M[i].resize(ncols);
     for (unsigned i=0;i<nrows;++i){
       const unsigned * bitmapi = bitmap + i*bitmapcols;
-      vector<modint>::iterator mi=M[i].begin();
+      typename vector<modint_t>::iterator mi=M[i].begin();
       unsigned j=0;
       for (;j<jend;++j){
 	if (!used[j])
@@ -8528,7 +8284,8 @@ This will be performed only in case of success (i.e. the leading will be reduced
     }
   }
 
-  unsigned create_matrix(const unsigned * bitmap,unsigned bitmapcols,const vector<used_t> & used,vector< vector<modint> > & M){
+  template<class modint_t>
+  unsigned create_matrix(const unsigned * bitmap,unsigned bitmapcols,const vector<used_t> & used,vector< vector<modint_t> > & M){
     unsigned nrows=unsigned(M.size()),zeros=0;
     int ncols=0;
     vector<used_t>::const_iterator ut=used.begin(),utend=used.end();
@@ -8536,14 +8293,14 @@ This will be performed only in case of success (i.e. the leading will be reduced
     for (;ut!=utend;++ut){
       ncols += *ut;
     }
-    vector<modint> tmp;
+    vector<modint_t> tmp;
     for (unsigned i=0;i<nrows;++i){
       if (M[i].empty()){ ++zeros; continue; }
       const unsigned * bitmapi = bitmap + i*bitmapcols;
       tmp.clear();
       tmp.resize(ncols);
       tmp.swap(M[i]);
-      vector<modint>::iterator mi=M[i].begin(),it=tmp.begin();
+      typename vector<modint_t>::iterator mi=M[i].begin(),it=tmp.begin();
       unsigned j=0;
       for (;j<jend;++j){
 	if (!used[j])
@@ -13339,8 +13096,8 @@ template<class tdeg_t,class modint_t>
 #endif
   } // end parallelization
 
-  template<class tdeg_t>
-  int zf4denselinalg(vector<unsigned> & lebitmap,vector< vector<modint> > & K,modint env,vectzpolymod<tdeg_t,modint> & f4buchbergerv,zinfo_t<tdeg_t> * info_ptr,vector<unsigned> & Rtoremv,unsigned N,unsigned Bs,unsigned nrows,vector<used_t> &used,unsigned usedcount,double mem,const order_t &order,int dim,int age,bool learning,bool multimodular,int parallel,int interreduce){
+  template<class tdeg_t,class modint_t>
+  int zf4denselinalg(vector<unsigned> & lebitmap,vector< vector<modint_t> > & K,modint_t env,vectzpolymod<tdeg_t,modint_t> & f4buchbergerv,zinfo_t<tdeg_t> * info_ptr,vector<unsigned> & Rtoremv,unsigned N,unsigned Bs,unsigned nrows,vector<used_t> &used,unsigned usedcount,double mem,const order_t &order,int dim,int age,bool learning,bool multimodular,int parallel,int interreduce){
     //parallel=1;
     // create dense matrix K 
     unsigned * bitmap=&lebitmap.front();
@@ -13351,19 +13108,20 @@ template<class tdeg_t,class modint_t>
       CERR << CLOCK()*1e-6 << " nthreads=" << parallel << " dense_rref " << K.size()-zeros << "(" << K.size() << ")" << "x" << usedcount << " ncoeffs=" << double(K.size()-zeros)*usedcount*1e-6 << "*1e6\n";
       double nz=0,nzrow=0;
       for (unsigned i=0;i<K.size();++i){
-	vector<int> & Ki=K[i];
+	vector<modint_t> & Ki=K[i];
 	if (!Ki.size())
 	  continue;
 	nzrow+=usedcount;
 	for (unsigned j=0;j<Ki.size();++j){
-	  if (Ki[j]) ++nz;
+	  if (Ki[j]!=0)
+	    ++nz;
 	}
       }
       CERR << "non-0 percentage " << nz/nzrow << '\n';
     }
     if (0 && !learning && info_ptr->permu.size()==Bs){
       vector<int> permutation=info_ptr->permu;
-      vector< vector<modint> > K1(Bs);
+      vector< vector<modint_t> > K1(Bs);
       for (unsigned i=0;i<Bs;++i){
 	swap(K1[i],K[permutation[i]]);
       }
@@ -13397,9 +13155,9 @@ template<class tdeg_t,class modint_t>
     unsigned first0 = unsigned(pivots.size());
     int i;
     if (!interreduce && first0<K.size() && learning){
-      vector<modint> & tmpv=K[first0];
+      vector<modint_t> & tmpv=K[first0];
       for (i=0;i<tmpv.size();++i){
-	if (tmpv[i])
+	if (tmpv[i]!=0)
 	  break;
       }
       if (i==tmpv.size()){
@@ -13438,16 +13196,16 @@ template<class tdeg_t,class modint_t>
       f4buchbergerv[pi].order=order;
       f4buchbergerv[pi].dim=dim;
       f4buchbergerv[pi].age=age;
-      vector<  T_unsigned<modint,unsigned>  > & Pcoord=f4buchbergerv[pi].coord;
+      vector<  T_unsigned<modint_t,unsigned>  > & Pcoord=f4buchbergerv[pi].coord;
       Pcoord.clear();
-      vector<modint> & v =K[i];
+      vector<modint_t> & v =K[i];
       if (v.empty()){
 	continue;
       }
       unsigned vcount=0;
-      typename vector<modint>::const_iterator vt=v.begin(),vtend=v.end();
+      typename vector<modint_t>::const_iterator vt=v.begin(),vtend=v.end();
       for (;vt!=vtend;++vt){
-	if (*vt)
+	if (*vt!=0)
 	  ++vcount;
       }
       Pcoord.reserve(vcount);
@@ -13456,10 +13214,10 @@ template<class tdeg_t,class modint_t>
       for (vt=v.begin();pos<N;++ut,++pos){
 	if (!*ut)
 	  continue;
-	modint coeff=*vt;
+	modint_t coeff=*vt;
 	++vt;
 	if (coeff!=0)
-	  Pcoord.push_back( T_unsigned<modint,unsigned> (coeff,Rtoremv[pos]));
+	  Pcoord.push_back( T_unsigned<modint_t,unsigned> (coeff,Rtoremv[pos]));
       }
       if (!Pcoord.empty())
 	f4buchbergerv[pi].ldeg=(*f4buchbergerv[pi].expo)[Pcoord.front().u];
@@ -13469,7 +13227,7 @@ template<class tdeg_t,class modint_t>
       }
       bool freemem=mem>4e7; // should depend on real memory available
       if (freemem){
-	vector<modint> tmp; tmp.swap(v);
+	vector<modint_t> tmp; tmp.swap(v);
       }
     }
     if (debug_infolevel>1)
@@ -13489,6 +13247,7 @@ template<class tdeg_t,class modint_t>
     }
   }
 
+#if 1
   template<class tdeg_t>
   int zf4denselinalg(vector<unsigned> & lebitmap,vector< vector<mod4int> > & K4,mod4int env,vectzpolymod<tdeg_t,mod4int> & f4buchbergerv,zinfo_t<tdeg_t> * info_ptr,vector<unsigned> & Rtoremv,unsigned N,unsigned Bs,unsigned nrows,vector<used_t> &used,unsigned usedcount,double mem,const order_t &order,int dim,int age,bool learning,bool multimodular,int parallel,int interreduce){
     unsigned * bitmap=&lebitmap.front();
@@ -13652,6 +13411,8 @@ template<class tdeg_t,class modint_t>
       CERR << CLOCK()*1e-6 << " f4buchbergerv stored" << '\n';
     return 1;
   }
+#endif
+
   // interreduce==0 normal F4 algo reduction, ==1 final gb auto-interreduction
   // to be done ==2 reduction of res[G.size()...] by gbasis in res, 
   // G should be identity, res[0] to res[G.size()-1] the gbasis
@@ -15771,7 +15532,8 @@ void G_idn(vector<unsigned> & G,size_t s){
     }
   }
 
-  // s*coordinates reduced as a linear combination of the lines of M
+  // s*each dim coordinates reduced as a linear combination of the lines of M
+  // (called with s==1)
   template<class tdeg_t,class modint_t>
   bool rur_linsolve(const vectpolymod<tdeg_t,modint_t> & gbmod,const polymod<tdeg_t,modint_t> & lm,const polymod<tdeg_t,modint_t> & s,const matrice & M,modint_t p,matrice & res){
     int S=int(lm.coord.size()),dim=lm.dim;
@@ -16040,6 +15802,11 @@ void G_idn(vector<unsigned> & G,size_t s){
   }
 
   // Compute minimal polynomial of s
+  // If it has max degree, then M will contain
+  //   M[0] = ? (minpoly if Hankel successful)
+  //   M[j], j=1..dim the j-th coordinate
+  // Otherwise M might be empty or
+  //   i-th row of M : coordinates of s^i reduced/gbmod in terms of lm
   template<class tdeg_t,class modint_t,class modint_t2>
   bool rur_minpoly(const vectpolymod<tdeg_t,modint_t> & gbmod,const polymod<tdeg_t,modint_t> & lm,const polymod<tdeg_t,modint_t> & s,modint_t p,vecteur & m,matrice & M){
     int S=int(lm.coord.size()),dim=lm.dim;
@@ -16053,6 +15820,7 @@ void G_idn(vector<unsigned> & G,size_t s){
       if (debug_infolevel)
 	CERR << CLOCK()*1e-6 << " rur separate " << s << " * monomial matrix computation " << S << '\n';
       // matrix of multiplication by s of all monomials in lm
+      // stored as a partially sparse matrix in mults/multv
       polymod<tdeg_t,modint_t> cur(order,dim);
       vector<int> tmp(S),tmp1;
       vecteur tmpv(S);
@@ -16135,15 +15903,20 @@ void G_idn(vector<unsigned> & G,size_t s){
       }
       mults.resize(multspos);
       tran_vect_vector_int(mults,tmpm); tmpm.swap(mults);  
-#if 1
       if (debug_infolevel)
 	CERR << CLOCK()*1e-6 << " missed " << miss << ", rur * xi" << '\n';
       // s^i is obtained by multiplying mults by the coordinates of s^[i-1]
+      // tmpm rows are the coordinates of s*lm[i] if multv[i]==-1
+      // mults is the transposed sparse
+#if 1
+      // For each coordinate, reduce x[i], i<dimension
+      // coordinates of x[i] reduced in terms of lm is stored in Kxi
+      // Code below is probably wrong for non_zero count
       int d=rur_dim(dim,order);
       vector< vector<int> > Kxi(d,vector<int>(S)); Kxi.reserve(d);
       polymod<tdeg_t,modint_t> si(order,dim);
       polymod<tdeg_t,modint_t> one(order,dim);
-      one.coord.push_back(T_unsigned<modint_t,tdeg_t>(1,0));
+      one.coord.push_back(T_unsigned<modint_t,tdeg_t>(1,tdeg_t(index_m(dim),order)));
       vector<bool> nonzero(S,false); vector<int> posxi(d,-1);
       index_t l(dim);
       for (unsigned i=0;int(i)<d;++i){
@@ -16478,11 +16251,8 @@ void G_idn(vector<unsigned> & G,size_t s){
   // if true, then separating element is s
   // and s has m as minimal polynomial,
   // M is the list of rows coordinates of powers of s in lm
-  // This will not work if the ideal is not a radical ideal
-  // In that case, if we get a minimal pol of degree M > lm.size()/2 for one coord.
-  // we search for each coordinate a relation polynomial1*coordinate-polynomial2=0
-  // where degree(polynomial2)<M and degree(polynomial1) <= lm.size()-M
-  // then we must consider particular values of t that cancel gcd(polynomial1,minpoly)
+  // or is already the rur (computed by using Hankel matrices)
+  // (cf. rur_linsolve)
   template<class tdeg_t,class modint_t,class modint_t2>
   bool rur_separate(vectpolymod<tdeg_t,modint_t> & gbmod,polymod<tdeg_t,modint_t> & lm,modint_t p,polymod<tdeg_t,modint_t> & s,vector<int> * initsep,vecteur & m,matrice & M,int radical){
     order_t order=lm.order;
@@ -16644,6 +16414,62 @@ void G_idn(vector<unsigned> & G,size_t s){
   // m the minimal polynomial of s as a polymod<tdeg_t,modint_t> wrt the 1st var
   // and for each coordinate (sqrfree part of m) * coordinate
   // expressed as a polynomial in s (stored in a polymod<tdeg_t,modint_t> wrt 1st var)
+  // Current method (not optimal if there are multiplicities)
+  // Try each coordinate as a separating form s, then random linear combination
+  // If minpoly of s is squarefree and max degree, the ideal is cyclic
+  // If minpoly of s is not squarefree, shrink the ideal by adding
+  // the squarefree part of the minpoly of s to the ideal
+  // This will make the ideal radical but may be too costly.
+  //
+  // Improvement to be implemented
+  // F. Rouillier et al: https://arxiv.org/pdf/2402.07141 (Maple code zds.mpl)
+  //
+  // check if s is separating on bivariate ideals
+  // requires computing minpoly of s, and lex gbasis of bivariate ideals
+  // for all coordinates X=X[1] to X[j], find polynomials in s and X in ideal
+  // gbasis=(minpoly(s),sum(a[k,i](s)*X^i,i=0..k))
+  // gbasis contains may 0 polynomial, so that degree(gbasis[k])==k if non 0
+  //
+  // Algo 2: check separating for X=X[j]
+  // f[0]=sqrfree(minpoly of s)
+  // for k=1 to sizeof(gbasis)
+  //   if (gbasis[k]==0) continue;
+  //   f[k]=f[k-1]/gcd(f[k-1],lcoeff(gbasis[k]))
+  //   for i=0 to k-1
+  //     if (k*(k-i)/(i+1)*a[k,k]*a[k,i] != a[k,k-1]*a[k,i+1] mod f[k])
+  //        return false;
+  //     end_if
+  //   end_for
+  // end_for
+  //
+  // Algo 3: find bivariate parametrization (for all coord X=X[1]to X[k])
+  // n=0, d=0, rho=1, f[0]=sqrfree(f)
+  // for k from 1 to sizeof(gbasis)
+  //   if (gbasis[k]==0) continue;
+  //   f[k] = f[k-1]/gcd(f[k-1],lcoeff(gbasis[k]))
+  //   rho *= f[k]
+  //   d += k*a[k,k]*rho mod f[0]
+  //   n += a[k,k-1]*rho mod f[0]
+  // end_for
+  //
+  // Algo 4: check a candidate separating form and return rur
+  // arg: do_check (if false we don't check), s (separating form), gbasis
+  // find minpoly(s) and store the list of rref-ed s^k for later computations
+  // for each coordinate X[j]
+  //   compute a lex gbasis for algo2, using the list above (FGLM algo)
+  //   if (do_check) check with algo2, if not return failure and coordinate #
+  //   compute rational parametrization then rur for this coordinate
+  // return rur
+  //
+  // Algo 6: run algo 4 first on coordinates, then on a linear combination
+  // constructed using the previous candidate and modifying the coeff
+  // of the coordinate number that returns the failure
+  // if coeff<0 change sign, if coeff>=0 replace by -coeff-1
+  //
+  // Algo 1: from rational param to rur
+  // Arg=(f(s)==0 not necessarily sqrfree, d[k](s)*X[k]+n[k](s)
+  // compute F=sqrfree(f), F1=diff(F)
+  // for k=1 to dim to rur[k]=-n[k]*inv(d[k] mod F)*F1 mod F
   template<class tdeg_t>
   bool rur_compute(vectpolymod<tdeg_t,modint> & gbmod,polymod<tdeg_t,modint> & lm,polymod<tdeg_t,modint> & lmmodradical,int p,polymod<tdeg_t,modint> & s,vector<int> * initsep,vectpolymod<tdeg_t,modint> & rur){
     vecteur m,M,res;
@@ -17304,7 +17130,7 @@ void G_idn(vector<unsigned> & G,size_t s){
       if (!zdata) current=current_gbasis;
       G.clear();
       double t_0=CLOCK()*1e-6;
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
       if (debug_infolevel)
 	CERR << std::setprecision(15) << clock_realtime() << " begin computing basis modulo " << p_qmodint << " batch/threads " << th+1 << "/" << parallel << '\n';
 #endif

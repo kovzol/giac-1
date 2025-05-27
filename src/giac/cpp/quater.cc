@@ -264,9 +264,15 @@ namespace giac {
   gen _galois_field(const gen & args,GIAC_CONTEXT){
     if ( args.type==_STRNG && args.subtype==-1) return  args;
     vecteur v;
+    if (args.type==_DOUBLE_)
+      return gensizeerr(gettext("GF expects an integer, not a float. Hint: check that you are in exact mode."));
     if (is_integer(args)){ // must be a power of a prime
       if (_isprime(args,contextptr)!=0){
+#ifdef GIAC_HAS_STO_38
+	return gensizeerr(gettext("GF is used for non-prime finite field. Use %% or mod for prime fields, e.g. 1 %% ")+args.print(contextptr)+'.');
+#else
 	return gensizeerr(gettext("GF is used for non-prime finite field. Use % or mod for prime fields, e.g. 1 % ")+args.print(contextptr)+'.');
+#endif
       }
       v.push_back(args);
     }
@@ -417,7 +423,7 @@ namespace giac {
     if (a.type==_INT_){
       int ai=a.val;
       if (!ai)
-	return "0";
+	return '('+makemod(0,p).print(contextptr)+')';;
       // if (ai==1) return "1";
       A=char2_uncoerce(a);
     }
@@ -430,8 +436,9 @@ namespace giac {
 	  gen tmp=symb_horner(*A._VECTptr,x._VECTptr->back());
 	  if (tmp.is_symb_of_sommet(at_plus))
 	    return '('+tmp.print(contextptr)+')';
-	  else
-	    return tmp.print(contextptr);
+	  if (tmp.type==_INT_)
+            return '('+makemod(tmp,p).print(contextptr)+')';
+          return tmp.print(contextptr);
 	}
 	return x._VECTptr->back().print()+"("+r2e(A,xid,contextptr).print()+")";      
       }
@@ -513,10 +520,19 @@ namespace giac {
     if (!is_undef(a)){
 #if 1 // compact representation of GF(2,n) for n<=30
       if (p.type==_INT_ && p.val==2){
-	if (P.type==_VECT && P._VECTptr->size()<=30)
+        int n;
+	if (P.type==_VECT && (n=P._VECTptr->size())<=30)
 	  P=horner(P,2);
-	if (P.type==_INT_ && a.type==_VECT)
+	if (P.type==_INT_ && a.type==_VECT){
 	  a=horner(a,2);
+          if (!is_integer(a)){
+#ifdef GIAC_HAS_STO38
+            *logptr(context0) << gettext("Invalid GF(2,")+print_INT_(n-1)+gettext(") element ")+x[1].print()+"("+a.print()+gettext("): unable to reduce to an integer \n");
+#else            
+            gensizeerr(gettext("Invalid GF(2,")+print_INT_(n-1)+gettext(") element ")+x[1].print()+"("+a.print()+gettext("): unable to reduce to an integer "));
+#endif
+          }
+        }
 	return;
       }
 #endif
@@ -1631,17 +1647,19 @@ namespace giac {
     }    
   }
 
-  gen galois_field::operator * (const gen & g) const { 
+  gen galois_field::operator * (const gen & g) const {
+    if (g.type==_FRAC)
+      return (*this)*(g._FRACptr->num*invmod(g._FRACptr->den,p));
     bool char2=p.type==_INT_ && p.val==2 && a.type==_INT_;
     if (is_integer(g)){
       if (char2){
 	if (g.type==_ZINT?modulo(*g._ZINTptr,2)==0:g%2==0) 
-	  return 0;
+	  return makemod(0,p);
 	return *this;
       }
       gen tmp=smod(g,p);
       if (is_exactly_zero(tmp))
-	return zero;
+	return makemod(0,p);
       return galois_field(p,P,x,g*a);
     }
     if (g.type==_MOD){

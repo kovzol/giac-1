@@ -308,10 +308,10 @@ exp	: T_NUMBER		{$$ = $1;}
 	// CERR << python_compat(giac_yyget_extra(scanner)) << tmp << '\n';
 	$$ = symbolic(*$1._FUNCptr,tmp);
         const giac::context * contextptr = giac_yyget_extra(scanner);
-	if (*$1._FUNCptr==at_maple_mode ||*$1._FUNCptr==at_xcas_mode ){
+	if ($3.type==_INT_ && (*$1._FUNCptr==at_maple_mode ||*$1._FUNCptr==at_xcas_mode )){
           xcas_mode(contextptr)=$3.val;
         }
-        if (*$1._FUNCptr==at_python_compat)
+        if ($3.type==_INT_ && *$1._FUNCptr==at_python_compat)
           python_compat(contextptr)=$3.val;
 	if (*$1._FUNCptr==at_user_operator){
           user_operator($3,contextptr);
@@ -384,8 +384,8 @@ exp	: T_NUMBER		{$$ = $1;}
           if (rg){
             if (f.type!=_VECT) f=makesequence(0,f);
             vecteur v=*f._VECTptr;
-            if (v.size()>=2) f=makesequence(v.front(),v[1]-1);
             if (v.size()==3) inc=v[2];
+            if (v.size()>=2) f=makesequence(v.front(),v[1]-inc);
           }
           if (inc.type==_INT_  && inc.val!=0 && f.type==_VECT && f._VECTptr->size()==2 && (rg || ($4.is_symb_of_sommet(at_interval) 
 	  // && f._VECTptr->front().type==_INT_ && f._VECTptr->back().type==_INT_ 

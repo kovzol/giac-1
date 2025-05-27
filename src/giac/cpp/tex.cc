@@ -1295,6 +1295,12 @@ namespace giac {
 	  return opstring+gen2tex(feu,contextptr) ;
 	return opstring+string("\\left(") + gen2tex(feu,contextptr) +string("\\right)");
       }
+      if (mys.sommet==at_inv){
+        if (feu.is_symb_of_sommet(at_sin))
+          return string("\\csc\\left(") + gen2tex(feu._SYMBptr->feuille,contextptr) +string("\\right)");
+        if (feu.is_symb_of_sommet(at_cos))
+          return string("\\sec\\left(") + gen2tex(feu._SYMBptr->feuille,contextptr) +string("\\right)");
+      }
       if (mys.sommet==at_inv && (feu.is_symb_of_sommet(at_prod) || feu.is_symb_of_sommet(at_plus) || feu.is_symb_of_sommet(at_pow) || feu.type<=_IDNT) ){
 	if (feu.type==_IDNT)
 	  return gen2tex(feu,contextptr)+"^{-1}";
@@ -1357,6 +1363,19 @@ namespace giac {
 	return "\\sqrt{"+gen2tex(v.front(),contextptr)+"}";
       if ( v.back()==minus_one_half || v.back()==fraction(minus_one,plus_two) )
 	return "\\frac{1}{\\sqrt{"+gen2tex(v.front(),contextptr)+"}}";
+      if (v.front().type==_SYMB && v.front()._SYMBptr->sommet!=at_exp && equalposcomp(primitive_tab_op,v.front()._SYMBptr->sommet)){
+        string res=string("\\")+v.front()._SYMBptr->sommet.ptr()->s+"\\^{";
+        res += gen2tex(v.back(),contextptr);
+        res += "}";
+        gen v0=v.front()._SYMBptr->feuille;
+        bool par = (v0.type>=_CPLX || is_strictly_positive(-v0,contextptr) ) && v0.type!=_IDNT && !ckmatrix(v0);
+        string v0s=gen2tex(v0,contextptr);
+        if (par)
+          res +="\\left("+v0s+"\\right)";
+        else
+          res += v0s;
+        return res;
+      }
       string res=gen2tex(v.front(),contextptr);
       bool par = (v.front().type>=_CPLX || is_strictly_positive(-v.front(),contextptr) ) && v.front().type!=_IDNT && !ckmatrix(v.front());
       if (par && !v.front().is_symb_of_sommet(at_plus)){
@@ -1439,7 +1458,7 @@ namespace giac {
     }
     return 0;
   }
-#if defined USE_GMP_REPLACEMENTS || defined GIAC_GGB || defined EMCC || defined EMCC2 || defined KHICAS || defined NSPIRE_NEWLIB
+#if defined USE_GMP_REPLACEMENTS || defined GIAC_GGB || defined EMCC || defined EMCC2 || defined KHICAS || defined NSPIRE_NEWLIB || defined GOODNOTES
   bool has_improved_latex_export(const gen &g,string &s,bool override_texmacs,GIAC_CONTEXT){
     return false;
   }
@@ -1522,7 +1541,7 @@ namespace giac {
     else
       fprintf(file,"\\begin{pspicture}(%.4f,%.4f)(%.4f,%.4f)\n\\psset{unit=%.4fcm}\n\\psset{linewidth=.5pt}\n\\psset{arrowsize=2pt 4}\n", X1*xunit, Y1*xunit, X2*xunit, Y2*xunit,xunit);
     fprintf(file,"\\psset{linecolor=black}\n");
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
     if (logo){
       // fprintf(file,"\\psframe[fillstyle=solid,fillcolor=gray](%.4f,%.4f)(%.4f,%.4f)\n",X1,Y1,X2,Y2);
       vector<logo_turtle> w=vecteur2turtlevect(v);

@@ -17,7 +17,7 @@
  */
 #ifndef _GIAC_GEN_H
 #define _GIAC_GEN_H
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
 extern size_t stackptr;
 #endif
 
@@ -144,10 +144,37 @@ namespace giac {
   gen genstabilityerr(GIAC_CONTEXT0);
 
   // short integer arithmetic
+#ifdef TICE
+  inline int absint(int a){
+    if (a<0)
+      return -a;
+    else
+      return a;
+  }
+
+  inline double absdouble(double a){
+    return std::fabs(a);
+  }
+
+  inline int giacmin(int a, int b){
+    if (a<b)
+      return a;
+    else
+      return b;
+  }
+
+  inline int giacmax(int a, int b){
+    if (a<b)
+      return b;
+    else
+      return a;
+  }
+#else
   int absint(int a);
   double absdouble(double a);
   int giacmin(int a,int b);
   int giacmax(int a,int b);
+#endif
   int invmod(int n,int modulo);
   unsigned invmod(unsigned a,int b);
   int invmod(longlong a,int b);
@@ -168,6 +195,50 @@ namespace giac {
   int smod(longlong a,int b); 
   longlong smodll(longlong res,longlong m);
   int simplify(int & a,int & b);
+
+  // Montgomery representation mod n with R==2**32, n must be odd and < 2**31
+  // a must be in [0,R*n[
+  // R==1LL<<32, 7 ops, returns A such that A*R==a mod n
+  // a is assumed to be >0, ninv is the inverse of n mod R
+  // ninv == invmodll(n,1LL<<32) should be precomputed
+  // NB: there are 2 implicit reductions mod 2**32 in unsigned(a)*ninv
+  inline unsigned monty_reduce2(longlong a,unsigned n,unsigned ninv){
+    longlong tmp=(a-longlong(unsigned(a)*ninv)*n);
+    int A=tmp>>32;
+    A += (A>>31) & n; // make A positive without tests
+    return A;
+  }
+  
+  // conversion of a mod n to Montgomery representation with R==2**32
+  // assumes |a| < n
+  // reverse operation of to_monty2 is monty_reduce2
+  // ninv is the inverse of n mod R == invmodll(n,1LL<<32);
+  // R2mod n should be precomputed as (((1LL<<32) % n)*(1LL<<32)) %n
+  inline unsigned to_monty2(int a,unsigned n,unsigned ninv,unsigned R2modn){
+    if (a<0) a+=n;
+    return monty_reduce2(a*longlong(R2modn),n,ninv);
+  }
+  // modular multiplication a*b mod n in Montgomery representation
+  // a and b are assumed to be in [0,n[
+  inline unsigned monty_mul2(unsigned a,unsigned b,unsigned n,unsigned ninv){
+    return monty_reduce2(a*longlong(b),n,ninv);
+  }
+
+  // modular substraction (a-b) mod n in Montgomery representation
+  // a and b are assumed to be in [0,n[
+  inline unsigned monty_sub2(unsigned a,unsigned b,unsigned n){
+    int c=int(a)-int(b);
+    c += (c>>31) & n;
+    return c;
+  }
+
+  // modular addition (a+b) mod n in Montgomery representation
+  // a and b are assumed to be in [0,n[
+  inline unsigned monty_add2(unsigned a,unsigned b,unsigned n){
+    int c=int(a)+int(b-n);
+    c += (c>>31) & n;
+    return c;
+  }
 
   struct ref_mpz_t {
     volatile ref_count_t ref_count;
@@ -441,7 +512,11 @@ namespace giac {
   public:
     bool operator () (const gen & a,const gen & b) const;
   };
+#if 0 //def CPP11 // otherwise crash on A[1,1]:=1; A[1,2]:=2;
+  typedef std::map<gen,gen,std::function<bool(const gen &, const gen &)> > gen_map;
+#else
   typedef std::map<gen,gen,comparegen> gen_map;
+#endif
 #else
   typedef std::map<gen,gen,const std::pointer_to_binary_function < const gen &, const gen &, bool> > gen_map;
 #endif
@@ -902,7 +977,11 @@ namespace giac {
 #if 1 // def NSPIRE
     ref_gen_map(): ref_count(1),m() {}
 #else
+#ifdef CPP11
+     ref_gen_map(const std::function<bool(const gen &, const gen &)> & p): ref_count(1),m(p) {}
+#else
     ref_gen_map(const std::pointer_to_binary_function < const gen &, const gen &, bool> & p): ref_count(1),m(p) {}
+#endif // CPP11
 #endif
     ref_gen_map(const gen_map & M):ref_count(1),m(M) {}
   };
@@ -1313,7 +1392,7 @@ namespace giac {
   std::string print_the_type(int val,GIAC_CONTEXT);
 
   // I/O
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
   stdostream & operator << (stdostream & os,const gen & a);
 #endif
 #ifdef NSPIRE
@@ -1415,7 +1494,7 @@ namespace giac {
   // Terminal data for EQW display
   struct eqwdata {
     gen g; 
-#if defined KHICAS || defined FXCG
+#if defined KHICAS || defined SDL_KHICAS || defined FXCG
     short int x,y,dx,dy;
     short int baseline;
 #else
@@ -1445,7 +1524,7 @@ namespace giac {
 
   class identificateur {
   public:
-    int * ref_count;
+    int * ref_count_ptr;
     gen * value;
     // std::string * name;
     const char * id_name;

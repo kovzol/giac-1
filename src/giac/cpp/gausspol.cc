@@ -365,7 +365,7 @@ namespace giac {
     if (fact.type!=_MOD && fact.type!=_USER && !th.coord.empty() && th.coord.front().value.type==_MOD){
       fact = makemod(fact,*(th.coord.front().value._MODptr+1));
     }
-    if (!is_zero(fact)){
+    if (!is_exactly_zero(fact)){
       vector< monomial<gen> >::const_iterator a = th.coord.begin();
       vector< monomial<gen> >::const_iterator a_end = th.coord.end();
       Mul<gen>(a,a_end,fact,res.coord);
@@ -855,7 +855,11 @@ namespace giac {
 		 std::vector< monomial<gen> >::const_iterator & itb_end,
 		 std::vector< monomial<gen> > & new_coord,
 		 bool (* is_strictly_greater)( const index_m &, const index_m &),
+#ifdef CPP11
+                 const std::function<bool(const monomial<gen> &, const monomial<gen> &)> m_is_strictly_greater
+#else
 		 const std::pointer_to_binary_function < const monomial<gen> &, const monomial<gen> &, bool> m_is_strictly_greater
+#endif
 	     ) {
     if (ita==ita_end || itb==itb_end){
       new_coord.clear();
@@ -4707,6 +4711,8 @@ namespace giac {
   }
 
   polynome gcdpsr(const polynome &p,const polynome &q,int gcddeg){
+    if (is_undef(p) || is_undef(q))
+      return polynome( monomial<gen>(1,p.dim));
     if (has_num_coeff(p) || has_num_coeff(q))
       return polynome( monomial<gen>(1,p.dim));
     if (debug_infolevel)
@@ -5187,6 +5193,16 @@ namespace giac {
     if (q.coord.empty()){
       d=p;
       return ;
+    }
+    if (p.coord.front().value.type==_MOD && q.coord.front().value.type!=_MOD){
+      polynome qq=p.coord.front().value*q;
+      gcd(p,qq,d);
+      return;
+    }
+    if (p.coord.front().value.type!=_MOD && q.coord.front().value.type==_MOD){
+      polynome pp=q.coord.front().value*p;
+      gcd(pp,q,d);
+      return;
     }
     /* if (p==q)
        return p; */

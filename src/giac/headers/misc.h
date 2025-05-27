@@ -61,11 +61,15 @@ namespace giac {
   gen _degree(const gen & args,GIAC_CONTEXT);
   gen _total_degree(const gen & args,GIAC_CONTEXT);
   gen _lcoeff(const gen & args,GIAC_CONTEXT);
+  extern const unary_function_ptr * const  at_periode ;
+  extern const unary_function_ptr * const  at_caseval ;
   extern const unary_function_ptr * const  at_lcoeff ;
   extern const unary_function_ptr * const  at_set_language ;
   extern const unary_function_ptr * const  at_float ;
   gen _build_complex(const gen & args,GIAC_CONTEXT);
   extern const unary_function_ptr * const  at_complex ;
+  extern const unary_function_ptr * const  at_radians ;
+  extern const unary_function_ptr * const  at_subtype ;
 
   gen _tcoeff(const gen & args,GIAC_CONTEXT);
   vecteur sqrfree(const gen & g,const vecteur & l,int mult,GIAC_CONTEXT);

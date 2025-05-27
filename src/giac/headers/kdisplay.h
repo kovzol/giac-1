@@ -3,7 +3,9 @@
 #define _KDISPLAY_H
 #include "config.h"
 #include "giacPCH.h"
-#ifdef KHICAS
+extern "C" void copy_to_xcas_clipboard(const char * s);
+extern "C" const char * get_xcas_clipboard();
+#if defined KHICAS || defined SDL_KHICAS
 #include "misc.h"
 
 #include <exception>
@@ -25,6 +27,7 @@ extern const char * flash_buf;
 extern "C" const char * flash_read(const char * filename);
 extern "C" int flash_filebrowser(const char ** filenames,int maxrecords,const char * extension);
 #endif
+
 class autoshutdown : public std::exception{
   const char * what () const throw ()
   {
@@ -59,6 +62,7 @@ extern "C" {
   void mp_stack_ctrl_init();
   extern int parser_errorline,parser_errorcol;
   void python_free();
+  extern bool nws_freezeturtle;
 }
 int micropy_ck_eval(const char *line);
 #endif
@@ -282,6 +286,9 @@ namespace xcas {
     int4(int u_,int d_,int du_,int dd_):u(u_),d(d_),du(du_),dd(dd_) {}
   };
   
+  struct int4bis {
+    int u,d,du,dd;
+  };
   // quaternion struct for more intuitive rotations
   struct quaternion_double {
     double w,x,y,z;
@@ -304,6 +311,7 @@ namespace xcas {
     int2(int i_,int j_):i(i_),j(j_) {}
     int2(): i(0),j(0) {}
   };
+
   inline bool operator < (const int2 & a,const int2 & b){ if (a.i!=b.i) return a.i<b.i; return a.j<b.j;}
   inline bool operator == (const int2 & a,const int2 & b){ return a.i==b.i && a.j==b.j;}
 
@@ -476,6 +484,7 @@ namespace xcas {
   void save_session(const giac::context * );
 #if 1
 #define MAX_FILENAME_SIZE 270
+  bool QRdisp(const char * text,const char *msg);
   void save_console_state_smem(const char * filename,bool xwaspy,bool qr,const giac::context *);
   bool load_console_state_smem(const char * filename,const giac::context *);
 
@@ -741,7 +750,11 @@ namespace giac {
   // category=0 for CATALOG, 1 for OPTN
   // returns 0 on exit, 1 on success
   int doCatalogMenu(char* insertText, const char* title, int category,const giac::context * contextptr);
+#ifdef NUMWORKS_SLOTB
+#define shortcuts_fr_string shortcuts_en_string
+#else
   extern const char shortcuts_fr_string[];
+#endif
   extern const char shortcuts_en_string[];
   extern const char apropos_fr_string[];
   extern const char apropos_en_string[];

@@ -1,6 +1,17 @@
 /* -*- compile-command: "g++-3.4 -I.. -g -c global.cc  -DHAVE_CONFIG_H -DIN_GIAC" -*- */
+#ifdef WIN32
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+#ifdef __MINGW_H
+#include <windows.h>
+#endif
+#endif
 
 #include "giacPCH.h"
+#if defined(EMCC) || defined(EMCC2)
+#include <emscripten.h>
+#endif
 
 /*  
  *  Copyright (C) 2000,14 B. Parisse, Institut Fourier, 38402 St Martin d'Heres
@@ -166,7 +177,7 @@ extern "C" int firvsprintf(char*,const char*, va_list);
 extern "C" int KeyPressed( void );
 #endif
 
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
 #include "kdisplay.h"
 #endif
 
@@ -227,7 +238,7 @@ int ctrl_c_interrupted(int exception){
   if (!giac::ctrl_c && !giac::interrupted)
     return 0;
   giac::ctrl_c=giac::interrupted=0;
-#ifndef NO_STD_EXCEPT
+#ifndef NO_STDEXCEPT
   if (exception)
     giac::setsizeerr("Interrupted");
 #endif
@@ -879,7 +890,7 @@ const char * tar_loadfile(const char * buffer,const char * filename,size_t * len
       if (len)
 	*len=f.size;
       else
-        return "";
+        ;//return "";
       return buffer+f.header_offset+512;
     }
   }
@@ -901,7 +912,8 @@ bool match(const char * filename,const char * extension){
 }
 
 int tar_filebrowser(const char * buf,const char ** filenames,int maxrecords,const char * extension){
-  vector<fileinfo_t> finfo=tar_fileinfo(buf,0);
+  static vector<fileinfo_t> finfo;
+  finfo=tar_fileinfo(buf,0);
   int s=finfo.size();
   if (s==0) return 0;
   int j=0;
@@ -1141,7 +1153,7 @@ int file_savetar(const char * filename,char * buffer,size_t buffersize){
   fclose(f);
   return 1;
 }
-#if !defined KHICAS && !defined USE_GMP_REPLACEMENTS && !defined GIAC_HAS_STO_38// 
+#if !defined KHICAS && !defined SDL_KHICAS && !defined USE_GMP_REPLACEMENTS && !defined GIAC_HAS_STO_38// 
 
 #ifdef HAVE_LIBDFU
 extern "C" { 
@@ -1185,7 +1197,7 @@ int dfu_exec(const char * s_){
   s="/Applications/usr/bin/"+s;
   if (giac::is_file_available(s.c_str()))
     return giac::system_no_deprecation(s.c_str());
-  s=s_; s="/usr/bin/"+s;
+  s=s_; s="/opt/homebrew/bin/"+s;
   return giac::system_no_deprecation(s.c_str());
 #else
   return system(s_);
@@ -1604,7 +1616,7 @@ namespace giac {
       }
       return makevecteur(res1,res2,res3,res4);
     }
-#if !defined KHICAS && !defined USE_GMP_REPLACEMENTS && !defined GIAC_HAS_STO_38
+#if !defined KHICAS && !defined SDL_KHICAS && !defined USE_GMP_REPLACEMENTS && !defined GIAC_HAS_STO_38
     if (g.type==_INT_){
       if (g.val==1){
 	char * buf= numworks_gettar(tar_first_modified_offset);
@@ -1621,7 +1633,7 @@ namespace giac {
 	if (!buf) return 0;
 	if (s==2 && v[1].type==_STRNG)
 	  return file_savetar(v[1]._STRNGptr->c_str(),buf,0);
-#if !defined KHICAS && !defined USE_GMP_REPLACEMENTS && !defined GIAC_HAS_STO_38
+#if !defined KHICAS && !defined SDL_KHICAS && !defined USE_GMP_REPLACEMENTS && !defined GIAC_HAS_STO_38
 	if (s==2 && v[1].type==_INT_){
 	  if (v[1].val==1)
 	    return numworks_sendtar(buf,0,tar_first_modified_offset);
@@ -1668,7 +1680,7 @@ namespace giac {
   }
   
 
-#if !defined KHICAS && !defined USE_GMP_REPLACEMENTS && !defined GIAC_HAS_STO_38
+#if !defined KHICAS && !defined SDL_KHICAS && !defined USE_GMP_REPLACEMENTS && !defined GIAC_HAS_STO_38
   bool scriptstore2map(const char * fname,nws_map & m){
     FILE * f=fopen(fname,"rb");
     if (!f)
@@ -1745,7 +1757,7 @@ namespace giac {
 
   
 
-#if !defined KHICAS && !defined USE_GMP_REPLACEMENTS && !defined GIAC_HAS_STO_38
+#if !defined KHICAS && !defined SDL_KHICAS && !defined USE_GMP_REPLACEMENTS && !defined GIAC_HAS_STO_38
   const unsigned char rsa_n_tab[]=
     {
       0xf2,0x0e,0xd4,0x9d,0x44,0x04,0xc4,0xc8,0x6a,0x5b,0xc6,0x9a,0xd6,0xdf,
@@ -2009,7 +2021,7 @@ namespace giac {
   int caseval_n=0,caseval_mod=0,caseval_unitialized=-123454321;
 #if !defined POCKETCAS
   void control_c(){
-#if defined NSPIRE || defined KHICAS
+#if defined NSPIRE || defined KHICAS || defined SDL_KHICAS
     if (
 #if defined NSPIRE || defined NSPIRE_NEWLIB
 	on_key_enabled && on_key_pressed()
@@ -2048,7 +2060,7 @@ namespace giac {
 #endif // POCKETCAS
 #endif // TIMEOUT
 
-#if defined KHICAS
+#if defined KHICAS || defined SDL_KHICAS
   void usleep(int t){
     os_wait_1ms(t/1000);
   }
@@ -3081,7 +3093,7 @@ extern "C" void Sleep(unsigned int miliSecond);
 #ifdef FXCG
   static ostream * _logptr_=0;
 #else
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
   stdostream os_cerr;
   static my_ostream * _logptr_=&os_cerr;
 #else
@@ -3094,13 +3106,13 @@ extern "C" void Sleep(unsigned int miliSecond);
       res=contextptr->globalptr->_logptr_;
     else
       res= _logptr_;
-#if defined(EMCC) || defined(EMCC2)
+#if (defined(EMCC) || defined(EMCC2)) && !defined SDL_KHICAS
     return res?res:&COUT;
 #else
 #ifdef FXCG
     return 0;
 #else
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
     return res?res:&os_cerr;
 #else
     return res?res:&CERR;
@@ -3669,7 +3681,7 @@ extern "C" void Sleep(unsigned int miliSecond);
       return _turtle_();
   }
 
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
   // protect turtle access by a lock
   // turtle changes are mutually exclusive even in different contexts
 #ifdef HAVE_LIBPTHREAD
@@ -3719,7 +3731,7 @@ extern "C" void Sleep(unsigned int miliSecond);
   int debug_infolevel=0;
 #endif
   int printprog=0;
-#if defined __APPLE__ || defined VISUALC || defined __MINGW_H || defined BESTA_OS || defined NSPIRE || defined FXCG || defined NSPIRE_NEWLIB || defined KHICAS
+#if defined __APPLE__ || defined VISUALC || defined __MINGW_H || defined BESTA_OS || defined NSPIRE || defined FXCG || defined NSPIRE_NEWLIB || defined KHICAS || defined SDL_KHICAS
 #ifdef _WIN32
   int threads=atoi(getenv("NUMBER_OF_PROCESSORS"));
 #else
@@ -3751,7 +3763,7 @@ extern "C" void Sleep(unsigned int miliSecond);
   int ABERTH_NBITSMAX=8192;
   int LAZY_ALG_EXT=0;
   int ALG_EXT_DIGITS=180;
-#if defined RTOS_THREADX || defined BESTA_OS || defined(KHICAS)
+#if defined RTOS_THREADX || defined BESTA_OS || defined(KHICAS) || defined SDL_KHICAS
 #ifdef BESTA_OS
   int LIST_SIZE_LIMIT = 100000 ;
   int FACTORIAL_SIZE_LIMIT = 1000 ;
@@ -3863,6 +3875,7 @@ extern "C" void Sleep(unsigned int miliSecond);
 #endif
   int MODRESULTANT=20;
   int ABS_NBITS_EVALF=1000;
+  int SET_COMPARE_MAXIDNT=20;
 
   // used by WIN32 for the path to the xcas directory
   string & xcasroot(){
@@ -3891,7 +3904,7 @@ extern "C" void Sleep(unsigned int miliSecond);
 
   void ctrl_c_signal_handler(int signum){
     ctrl_c=true;
-#if !defined KHICAS && !defined NSPIRE_NEWLIB && !defined WIN32 && !defined BESTA_OS && !defined NSPIRE && !defined FXCG && !defined POCKETCAS && !defined __MINGW_H
+#if !defined KHICAS && !defined SDL_KHICAS && !defined NSPIRE_NEWLIB && !defined WIN32 && !defined BESTA_OS && !defined NSPIRE && !defined FXCG && !defined POCKETCAS && !defined __MINGW_H
     if (child_id)
       kill(child_id,SIGINT);
 #endif
@@ -4425,7 +4438,7 @@ extern "C" void Sleep(unsigned int miliSecond);
 	if (sortie._SYMBptr->sommet==at_sto && sortie._SYMBptr->feuille.type==_VECT){
 	  vecteur & v=*sortie._SYMBptr->feuille._VECTptr;
 	  // cerr << v << '\n';
-	  if ((v.size()==2) && (v[1].type==_IDNT)){
+	  if ((v.size()==2) && v[1].type==_IDNT && v[1]._IDNTptr->ref_count_ptr!=(int*)-1){
 	    if (v[1]._IDNTptr->value)
 	      delete v[1]._IDNTptr->value;
 	    v[1]._IDNTptr->value = new gen(v[0]);
@@ -4435,7 +4448,7 @@ extern "C" void Sleep(unsigned int miliSecond);
 	}
 	if (sortie._SYMBptr->sommet==at_purge){
 	  gen & g=sortie._SYMBptr->feuille;
-	  if ((g.type==_IDNT) && (g._IDNTptr->value) ){
+	  if (g.type==_IDNT && (g._IDNTptr->value) && g._IDNTptr->ref_count_ptr!=(int *) -1){
 	    delete g._IDNTptr->value;
 	    g._IDNTptr->value=0;
 	  }
@@ -4856,11 +4869,16 @@ extern "C" void Sleep(unsigned int miliSecond);
 #if defined MINGW32 && defined GIAC_GGB
     return true;
 #else
-    if (access(ch,R_OK))
-      return false;
+    FILE * f =fopen(ch,"r");
+    if (f){
+      fclose(f);
+      return true;
+    }
+    return false;
+    //if (access(ch,R_OK)) return false;
 #endif
 #endif
-    return true;
+    return false;
   }
 
   bool file_not_available(const char * ch){
@@ -4916,7 +4934,7 @@ extern "C" void Sleep(unsigned int miliSecond);
     string file=orig_file;
     string s;
     bool url=false;
-    if (file.substr(0,4)=="http"){
+    if (file.size()>=4 && file.substr(0,4)=="http" || file.substr(0,4)=="mail"){
       url=true;
       s="'"+file+"'";
     }
@@ -5025,6 +5043,8 @@ extern "C" void Sleep(unsigned int miliSecond);
 	browser="chromium";
       if (!access("/usr/bin/firefox",R_OK))
 	browser="firefox";
+      if (!access("/usr/bin/open",R_OK))
+	browser="open";
 #endif
     }
     // find binary name
@@ -5051,22 +5071,32 @@ extern "C" void Sleep(unsigned int miliSecond);
   }
 
   bool system_browser_command(const string & file){
+#ifdef EMCC2
+    EM_ASM_ARGS({
+        var url=UTF8ToString($0);
+        console.log('system_browser_command',url);
+        window.open(url, '_blank').focus();
+      },file.c_str());
+    return true;
+#endif
 #if defined BESTA_OS || defined POCKETCAS
     return false;
 #else
 #ifdef WIN32
     string res=file;
-    if (file.size()>4 && file.substr(0,4)!="http" && file.substr(0,4)!="file"){
+    if (file.size()>4 && file.substr(0,4)!="http" && file.substr(0,4)!="file" && file.substr(0,4)!="mail"){
       if (res[0]!='/')
 	res=giac_aide_dir()+res;
-      // Remove # trailing part of URL
-      int ss=int(res.size());
-      for (--ss;ss>0;--ss){
-	if (res[ss]=='#' || res[ss]=='.' || res[ss]=='/' )
-	  break;
+      if (file.substr(0,4)!="xcas" && file.substr(0,8)!="doc/xcas"){
+        // Remove # trailing part of URL
+        int ss=int(res.size());
+        for (--ss;ss>0;--ss){
+          if (res[ss]=='#' || res[ss]=='.' || res[ss]=='/' )
+            break;
+        }
+        if (ss && res[ss]!='.')
+          res=res.substr(0,ss);
       }
-      if (ss && res[ss]!='.')
-	res=res.substr(0,ss);
       CERR << res << '\n';
 #if !defined VISUALC && !defined __MINGW_H && !defined NSPIRE && !defined FXCG
       /* If we have a POSIX path list, convert to win32 path list */
@@ -5092,7 +5122,7 @@ extern "C" void Sleep(unsigned int miliSecond);
 #ifdef __MINGW_H
     while (res.size()>=2 && res.substr(0,2)=="./")
       res=res.substr(2,res.size()-2);
-    if (res.size()<4 || res.substr(0,4)!="http")
+    if (res.size()<4 || (res.substr(0,4)!="http" && res.substr(0,4)!="mail"))
       res = "file:///c:/xcaswin/"+res;
     CERR << "running open on " << res << '\n';
     //ShellExecute(NULL,"open","file:///c:/xcaswin/doc/fr/cascmd_fr/index.html",\
@@ -5273,7 +5303,7 @@ NULL,NULL,SW_SHOWNORMAL);
 	    }
 	  }
 	}
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
 	CERR << "Added " << vector_aide_ptr()->size()-s << " synonyms" << '\n';
 #endif
 	sort(vector_aide_ptr()->begin(),vector_aide_ptr()->end(),alpha_order);
@@ -5348,7 +5378,7 @@ NULL,NULL,SW_SHOWNORMAL);
     language(i,contextptr);
     add_language(i,contextptr);
 #endif
-#if defined KHICAS && !defined NUMWORKS_SLOTBFR
+#if (defined KHICAS || defined SDL_KHICAS) && !defined NUMWORKS_SLOTBFR
     lang=i;
 #endif
     return find_doc_prefix(i);
@@ -5445,6 +5475,8 @@ NULL,NULL,SW_SHOWNORMAL);
       }
 #endif
     }
+    if (debug_infolevel)
+      cout << "LANG " << s << "\n";
     if (s.size()>=2){
       s=s.substr(0,2);
       int i=string2lang(s);
@@ -5519,7 +5551,7 @@ NULL,NULL,SW_SHOWNORMAL);
   }
 
 #ifndef RTOS_THREADX
-#if !defined BESTA_OS && !defined NSPIRE && !defined FXCG && !defined(KHICAS)
+#if !defined BESTA_OS && !defined NSPIRE && !defined FXCG && !defined(KHICAS) && !defined SDL_KHICAS
   std::map<std::string,context *> * context_names = new std::map<std::string,context *> ;
 
   context::context(const string & name) { 
@@ -5701,7 +5733,7 @@ NULL,NULL,SW_SHOWNORMAL);
 	}
       }
 #ifndef RTOS_THREADX
-#if !defined BESTA_OS && !defined NSPIRE && !defined FXCG && !defined(KHICAS)
+#if !defined BESTA_OS && !defined NSPIRE && !defined FXCG && !defined(KHICAS) && !defined SDL_KHICAS
       if (context_names){
 	map<string,context *>::iterator it=context_names->begin(),itend=context_names->end();
 	for (;it!=itend;++it){
@@ -5859,7 +5891,7 @@ NULL,NULL,SW_SHOWNORMAL);
       cleanup_context(contextptr);
       if (tp.f)
 	tp.f(string2gen("Aborted",false),tp.f_param);
-#if !defined __MINGW_H && !defined KHICAS
+#if !defined __MINGW_H && !defined KHICAS && !defined SDL_KHICAS
       *logptr(contextptr) << gettext("Thread ") << tp.eval_thread << " has been cancelled" << '\n';
 #endif
 #ifdef NO_STDEXCEPT
@@ -5929,7 +5961,7 @@ NULL,NULL,SW_SHOWNORMAL);
 	  kill_thread(false,contextptr);
 	  clear_prog_status(contextptr);
 	  cleanup_context(contextptr);
-#if !defined __MINGW_H && !defined KHICAS
+#if !defined __MINGW_H && !defined KHICAS && !defined SDL_KHICAS
 	  *logptr(contextptr) << gettext("Cancel thread ") << eval_thread << '\n';
 #endif
 #ifdef NO_STDEXCEPT
@@ -6083,13 +6115,13 @@ NULL,NULL,SW_SHOWNORMAL);
 		     _python_compat_(false),
 #endif
 		     _angle_mode_(0), _bounded_function_no_(0), _series_flags_(0x3),_step_infolevel_(0),_default_color_(FL_BLACK), _epsilon_(1e-12), _proba_epsilon_(1e-15),  _show_axes_(1),_spread_Row_ (-1), _spread_Col_ (-1), 
-#if defined(EMCC) || defined(EMCC2)
+#if (defined(EMCC) || defined(EMCC2)) && !defined SDL_KHICAS
 		     _logptr_(&COUT), 
 #else
 #ifdef FXCG
 		     _logptr_(0),
 #else
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
 		     _logptr_(&os_cerr),
 #else
 		     _logptr_(&CERR),
@@ -6106,7 +6138,7 @@ NULL,NULL,SW_SHOWNORMAL);
 #endif
   { 
     _pl._i_sqrt_minus1_=1;
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
     _turtle_stack_.push_back(_turtle_);
 #endif
     _debug_ptr=new debug_struct;
@@ -6190,7 +6222,7 @@ NULL,NULL,SW_SHOWNORMAL);
      _max_sum_sqrt_=g._max_sum_sqrt_;
      _max_sum_add_=g._max_sum_add_;
      _turtle_=g._turtle_;
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
      _turtle_stack_=g._turtle_stack_;
 #endif
      _autoname_=g._autoname_;
@@ -7195,7 +7227,7 @@ unsigned int ConvertUTF8toUTF162 (
       sym_string_tab::const_iterator it=syms().begin(),itend=syms().end();
       for (;it!=itend;++it){
 	gen id=it->second;
-	if (id.type==_IDNT && id._IDNTptr->value)
+	if (id.type==_IDNT && id._IDNTptr->value && id._IDNTptr->ref_count_ptr!=(int *) -1)
 	  res.push_back(symb_sto(*id._IDNTptr->value,id));
       }
       unlock_syms_mutex();  
@@ -7488,8 +7520,8 @@ unsigned int ConvertUTF8toUTF162 (
   // moved from input_lexer.ll for easier debug
   const char invalid_name[]="Invalid name";
 
-#if defined USTL || defined GIAC_HAS_STO_38 || (defined KHICAS && !defined(SIMU))
-#if defined GIAC_HAS_STO_38 || defined KHICAS
+#if defined USTL || defined GIAC_HAS_STO_38 || (defined KHICAS && !defined(SIMU)) || defined SDL_KHICAS
+#if defined GIAC_HAS_STO_38 || defined KHICAS || defined SDL_KHICAS
 void update_lexer_localization(const std::vector<int> & v,std::map<std::string,std::string> &lexer_map,std::multimap<std::string,localized_string> &back_lexer_map,GIAC_CONTEXT){}
 #endif
 #else
@@ -7682,7 +7714,7 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
       return ok;
     }
 
-#ifdef EMCC
+#if defined EMCC || defined EMCC2 || defined SIMU
   bool cas_builtin(const char * s,GIAC_CONTEXT){
     std::pair<charptr_gen *,charptr_gen *> p=std::equal_range(builtin_lexer_functions_begin(),builtin_lexer_functions_end(),std::pair<const char *,gen>(s,0),tri);
     bool res=p.first!=p.second && p.first!=builtin_lexer_functions_end();
@@ -7777,7 +7809,7 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
 #if !defined NSPIRE_NEWLIB || defined KHICAS
 	  res=0;
 	  int pos=int(p.first-builtin_lexer_functions_begin());
-#if defined KHICAS && !defined x86_64
+#if defined KHICAS && !defined SDL_KHICAS && !defined x86_64 && !defined __ARM_ARCH_ISA_A64 && !defined __MINGW_H
 	  const unary_function_ptr * at_val=*builtin_lexer_functions_[pos];
 #else
 	  size_t val=builtin_lexer_functions_[pos];
@@ -8121,7 +8153,7 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
     if (posturtle>=0 && posturtle<cs){
       // add python turtle shortcuts
       static bool alertturtle=true;
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
       cur += "fd:=forward:;bk:=backward:; rt:=right:; lt:=left:; pos:=position:; seth:=heading:;setheading:=heading:; ";
 #else
       cur += "pu:=penup:;up:=penup:; pd:=pendown:;down:=pendown:; fd:=forward:;bk:=backward:; rt:=right:; lt:=left:; pos:=position:; seth:=heading:;setheading:=heading:; reset:=efface:;";
@@ -8220,6 +8252,12 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
   // elif ...: -> elif ... then [nothing in stack]
   // try: ... except: ...
   std::string python2xcas(const std::string & s_orig,GIAC_CONTEXT){
+    if (strncmp(s_orig.c_str(),"spreadsheet[",12)==0)
+      return s_orig;
+    if (strncmp(s_orig.c_str(),"function",8)==0 || strncmp(s_orig.c_str(),"fonction",8)==0){
+      python_compat(contextptr)=0;
+      return s_orig;
+    }
     if (xcas_mode(contextptr)>0 && abs_calc_mode(contextptr)!=38)
       return s_orig;
     if (abs_calc_mode(contextptr)==38){
@@ -8502,7 +8540,7 @@ void update_lexer_localization(const std::vector<int> & v,std::map<std::string,s
 	      posmatplotlib=cur.find("pylab");
 	    int cs=int(cur.size());
 	    pythonmode=true;
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
 	    if (
 		(posturtle<0 || posturtle>=cs) && 
 		(poscmath<0 || poscmath>=cs) && 

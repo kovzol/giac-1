@@ -34,7 +34,7 @@
 #include "giacPCH.h"
 
 using namespace std;
-#if !defined NSPIRE && !defined FXCG && !defined KHICAS
+#if !defined NSPIRE && !defined FXCG && !defined KHICAS 
 #ifdef VISUALC13
 #undef clock
 #undef clock_t
@@ -101,7 +101,7 @@ extern "C" {
 #include "lin.h"
 #include "quater.h"
 #include "giacintl.h"
-#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS 
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined SDL_KHICAS
 #else
 #include "signalprocessing.h"
 #endif
@@ -131,7 +131,7 @@ extern "C" {
 #include <sys/wait.h>
 #endif
 
-#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined SDL_KHICAS
 inline bool is_graphe(const giac::gen &g){ return false; }
 inline giac::gen _graph_vertices(const giac::gen &g,const giac::context *){ return g;}
 inline giac::gen _is_planar(const giac::gen &g,const giac::context *){ return g;}
@@ -171,7 +171,7 @@ namespace giac {
   double global_window_xmin(gnuplot_xmin),global_window_xmax(gnuplot_xmax),global_window_ymin(gnuplot_ymin),global_window_ymax(gnuplot_ymax);
   double x_tick(1.0),y_tick(1.0);
   double class_minimum(0.0),class_size(1.0);
-#if defined RTOS_THREADX || defined EMCC || defined EMCC2 || defined KHICAS
+#if defined RTOS_THREADX || defined EMCC || defined EMCC2 || defined KHICAS || defined SDL_KHICAS
   int gnuplot_pixels_per_eval=128;
 #else
   int gnuplot_pixels_per_eval=401;
@@ -1065,7 +1065,7 @@ namespace giac {
 
   string print_DOUBLE_(double d,unsigned ndigits){
     char s[256];
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
     sprint_double(s,d);
     // search for a decimal point in s
     int l=strlen(s),i;
@@ -1098,7 +1098,8 @@ namespace giac {
     return s;
   }
 
-#if defined KHICAS || defined GIAC_HAS_STO_38
+#if defined KHICAS || defined SDL_KHICAS || defined GIAC_HAS_STO_38 || defined USE_GMP_REPLACEMENTS
+#ifndef SDL_KHICAS
   void arc_en_ciel(int k,int & r,int & g,int & b){
     k += 21;
     k %= 126;
@@ -1127,6 +1128,7 @@ namespace giac {
       }
     }
   }
+#endif
 
   static const int arc_en_ciel_colors=15;
   int density(double z,double fmin,double fmax,int pal){
@@ -1179,7 +1181,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
       gen D(x,ymin);
       int rgb;
       int r,g,b,c;
-#if defined KHICAS || defined POCKETCAS
+#if defined KHICAS || defined SDL_KHICAS || defined POCKETCAS
       arc_en_ciel(i*double(126.0)/n,r,g,b);
       rgb=(((r*32)/256)<<11) | (((g*64)/256)<<5) | (b*32/256);
       vecteur attrib(1,rgb+_FILL_POLYGON+(i?_QUADRANT4:_QUADRANT3));
@@ -1329,7 +1331,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 #endif
         {
         for (int i=0;i<arc_en_ciel_colors;++i){
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
           int r,g,b;
           arc_en_ciel(126.0/(arc_en_ciel_colors-1)*i,r,g,b);
           attr[i]=_FILL_POLYGON + (((r*32)/256)<<11) | (((g*64)/256)<<5) | (b*32/256);
@@ -1616,7 +1618,9 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 	if (j<function_ymin)
 	  function_ymin=j;
 	if (i!=xmin){
-	  if (fabs(oldj-j)>(function_ymax-function_ymin)/5){ // try middle-pnt
+          double dij=fabs(oldj-j);
+          dij = ldexp(dij,2); // dij*=4
+	  if (dij>(function_ymax-function_ymin)){ // try middle-pnt
 	    if (debug_infolevel)
 	      CERR << y << " checking step at " << i << " " << yy << '\n';
 	    local_sto_double_increment(-step/2,*vars._IDNTptr,newcontextptr);
@@ -1715,7 +1719,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 	nu=int(std::sqrt(double(nstep)));
 	nv=int(std::sqrt(double(nstep)));
       }
-#if defined KHICAS || defined GIAC_HAS_STO_38
+#if defined KHICAS || defined SDL_KHICAS || defined GIAC_HAS_STO_38
       if (nu*nv>900 && densityplot!=2){
 #if 1 // def DEVICE
 	nu=nv=30;
@@ -1835,7 +1839,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 	    if (fval._DOUBLE_val>fmax)
 	      fmax=fval._DOUBLE_val;
 	  }
-#if defined KHICAS || defined GIAC_HAS_STO_38 // || defined HYPERSURFACE3 FIXME format is not translatable, etc.
+#if defined KHICAS || defined SDL_KHICAS || defined GIAC_HAS_STO_38 // || defined HYPERSURFACE3 FIXME format is not translatable, etc.
 	  if (!densityplot){
 	    tmp.push_back(x); tmp.push_back(y); tmp.push_back(fval);
 	  } 
@@ -3528,7 +3532,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     gen ee(e);
     ee.subtype=gnuplot_show_pnt(e,contextptr);
     history_plot(contextptr).push_back(ee);
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
     if (io_graph(contextptr))
       __interactive.op(ee,contextptr);
 #endif
@@ -3545,7 +3549,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     gen ee(e);
     ee.subtype=gnuplot_show_pnt(*e._SYMBptr,contextptr);
     history_plot(contextptr).push_back(ee);
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
     if (io_graph(contextptr))
       __interactive.op(ee,contextptr);
 #endif
@@ -3559,7 +3563,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 #else
     ee.subtype=-1;
 #endif
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
     history_plot(contextptr).push_back(ee);
     if (io_graph(contextptr))
       __interactive.op(ee,contextptr);
@@ -4982,7 +4986,10 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     }
   }
 
-  gen _polygone(const gen & args,GIAC_CONTEXT){
+  gen _polygone(const gen & args_,GIAC_CONTEXT){
+    gen args(remove_at_pnt(args_));
+    if (args.is_symb_of_sommet(at_curve))
+      args=args_[1][2];
     if ( args.type==_STRNG && args.subtype==-1) return  args;
     if (args.type!=_VECT)
       return symbolic(at_polygone,args);
@@ -5000,7 +5007,10 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
   static define_unary_function_eval (__polygone,&_polygone,_polygone_s);
   define_unary_function_ptr5( at_polygone ,alias_at_polygone,&__polygone,0,true);
 
-  gen _polygone_ouvert(const gen & args,GIAC_CONTEXT){
+  gen _polygone_ouvert(const gen & args_,GIAC_CONTEXT){
+    gen args(remove_at_pnt(args_));
+    if (args.is_symb_of_sommet(at_curve))
+      args=args_[1][2];
     if ( args.type==_STRNG && args.subtype==-1) return  args;
     if (args.type!=_VECT)
       return symbolic(at_polygone,args);
@@ -5536,9 +5546,15 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
   static define_unary_function_eval (__barycentre,&_barycentre,_barycentre_s);
   define_unary_function_ptr5( at_barycentre ,alias_at_barycentre,&__barycentre,0,true);
 
+  void unvect(gen & a){
+    if (a.type==_VECT && a.subtype==_VECTOR__VECT && a._VECTptr->size()==2)
+      a=a._VECTptr->back()-a._VECTptr->front();
+  }
+
   gen scalar_product(const gen & a0,const gen & b0,GIAC_CONTEXT){
     gen a=remove_at_pnt(a0);
     gen b=remove_at_pnt(b0);
+    unvect(a); unvect(b);
     if (a.type==_VECT && b.type==_VECT)
       return scalarproduct(*a._VECTptr,*b._VECTptr,contextptr);
     gen ax,ay; reim(a,ax,ay,contextptr);
@@ -6200,7 +6216,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
         bool loop=true;
         if (res.type==_VECT && res.subtype==_POINT__VECT)
           loop=false;
-        else if (res.type<_IDNT)
+        else if (res.type<_IDNT || res.type==_FRAC)
           loop=false;
         else if (res.type==_SYMB && has_i(res))
           loop=false;
@@ -6251,19 +6267,41 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 #endif
 	gen x,y;
 	reim(v[0],x,y,contextptr);
-	y=-y*derive(x,v[1],contextptr);
-	return _integrate(makesequence(y,v[1],v[2],v[3]),contextptr);
+	gen Y=-y*derive(x,v[1],contextptr);
+	gen I1=_integrate(makesequence(Y,v[1],v[2],v[3]),contextptr);
+#ifdef GIAC_GGB
+        return I1;
+#endif
+        // add segment between end points
+        // for plot(f(x),x=x1..x2) this will return the opposite value
+        // of integrate(f(x),x=x1..x2)+trapezoid area
+        // because we are clockwise and not trigo
+        gen I2=(subst(x,v[1],v[3],false,contextptr)-subst(x,v[1],v[2],false,contextptr))*(subst(y,v[1],v[2],false,contextptr)+subst(y,v[1],v[3],false,contextptr))/2;
+        return I1+I2;
       }
     }
     if (g.type!=_VECT || g.subtype==_POINT__VECT || g._VECTptr->empty())
       return 0; // so that a single point has area 0
     vecteur v=*g._VECTptr;
     int s=int(v.size());
+    if (s==3 && v[0].type==_VECT  && !v[0]._VECTptr->empty() && remove_at_pnt(v[0]._VECTptr->front()).is_symb_of_sommet(at_curve))
+      v[0]=v[0]._VECTptr->front();
     v[0]=remove_at_pnt(v[0]);
     if (s==3 && v[0].is_symb_of_sommet(at_curve)){
       v[1]=symb_interval(v[1],v[2]);
       v.pop_back();
       --s;
+    }
+    if (s==3 && v[0].type==_VECT && v[0]._VECTptr->size()==2 && !v[1].is_symb_of_sommet(at_pnt) && v[1].type!=_VECT && !v[2].is_symb_of_sommet(at_pnt) && v[2].type!=_VECT){ // segment,x1,x2, workaround for e.g. area(plotfunc(x),1,2)
+      gen A=v[0][0],B=v[0][1],Ax,Ay,Bx,By,x1=v[1],x2=v[2];
+      if (A.type!=_VECT && !A.is_symb_of_sommet(at_pnt) && B.type!=_VECT && !B.is_symb_of_sommet(at_pnt)){
+        reim(A,Ax,Ay,contextptr);
+        reim(B,Bx,By,contextptr);
+        gen m=(By-Ay)/(Bx-Ax);
+        gen b=Ay-m*Ax;
+        // y=m*x+b -> 1/2*m*x^2+b*x
+        return m/2*(x2*x2-x1*x1)+b*(x2-x1);
+      }
     }
     // search for a numeric integration method
     if (s==2 && (v[1].is_symb_of_sommet(at_equal) || v[1].is_symb_of_sommet(at_interval)) ){
@@ -6294,6 +6332,11 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     if (v[0].is_symb_of_sommet(at_curve))
       return gensizeerr(contextptr);
     if (s>3){
+      if (v[s-1]==at_rectangle){
+        *logptr(contextptr) << gettext("Using left_rectangle\n");
+        v[s-1]=_RECTANGLE_GAUCHE;
+        v[s-1].subtype=_INT_SOLVER;
+      }
       for (int i=0;i<s;++i){
 	if (v[i].type==_INT_ && v[i].subtype==_INT_SOLVER){
 	  int method=v[i].val,n;
@@ -6451,25 +6494,33 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 	res=angle(nf,ne,contextptr);	
       }
       else {
-	if (e.type!=_VECT || e._VECTptr->size()!=2)
+	if (e.type!=_VECT || e._VECTptr->size()!=2){
+          angle_mode(mode,contextptr);
 	  return gensizeerr(gettext("angle plan with unknown"));
+        }
 	gen de=e._VECTptr->back()-e._VECTptr->front();
-	if (de.type!=_VECT)
+	if (de.type!=_VECT){
+          angle_mode(mode,contextptr);
 	  return gensizeerr(contextptr);
+        }
 	res=angle(nf,*de._VECTptr,contextptr);
       }
     }
     else {
       if (e.type==_VECT && e._VECTptr->size()!=3){
-	if ((e._VECTptr->size()!=2) || (f._VECTptr->size()!=2))
+	if ((e._VECTptr->size()!=2) || (f._VECTptr->size()!=2)){
+          angle_mode(mode,contextptr);
 	  return gensizeerr(gettext("angle"));
+        }
 	if (e._VECTptr->front().type==_VECT 
 	    // check added 12/8/2014 for angle(droite(y=x),droite(y=1-x),"") 
 	    || (e.subtype==_LINE__VECT || e.subtype==_HALFLINE__VECT)
 	    ){	
 	  vecteur w=inter(v.front(),v[1],0); // context does not apply for lines
-	  if (w.empty())
+	  if (w.empty()){
+            angle_mode(mode,contextptr);
 	    return gensizeerr(gettext("Lines must intersect"));
+          }
 	  gen w0=remove_at_pnt(w.front());
 	  g=f._VECTptr->back();
 	  if (g==w0)
@@ -6487,8 +6538,10 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
       }
       else {
 	if (f.type==_VECT && f._VECTptr->size()!=3){
-	  if (f._VECTptr->size()!=2)
+	  if (f._VECTptr->size()!=2){
+            angle_mode(mode,contextptr);
 	    return gensizeerr(gettext("angle"));
+          }
 	  if (v.size()==3){
 	    f=e+f._VECTptr->back()-f._VECTptr->front();
 	    g=remove_at_pnt(v[2]);
@@ -6501,8 +6554,10 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 	  }
 	}
 	else {
-	  if (v.size()!=3)
+	  if (v.size()!=3){
+            angle_mode(mode,contextptr);
 	    return gensizeerr(gettext("angle"));
+          }
 	  g=remove_at_pnt(v[2]);
 	  if (g.type==_VECT && g._VECTptr->size()==2)
 	    g=e+g._VECTptr->back()-g._VECTptr->front();
@@ -7671,7 +7726,14 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     return v;
   }
 
-  gen _sommets(const gen & args,GIAC_CONTEXT){
+  gen _sommets(const gen & args_,GIAC_CONTEXT){
+    gen args;
+    if (args_.is_symb_of_sommet(at_pnt))
+      args=remove_at_pnt(args_);
+    if (args.is_symb_of_sommet(at_curve))
+      args=args_[1][2];
+    else
+      args=args_;
     if ( args.type==_STRNG && args.subtype==-1) return  args;
     if (is_graphe(args))
       return _graph_vertices(args,contextptr);
@@ -7988,7 +8050,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 	}
 	if (bf1v.size()==6)
 	  bf1v.pop_back();
-	bf1v[0]=symetrie_droite(w,v[0],bf1v[0],contextptr);
+	bf1v[0]=ratnormal(symetrie_droite(w,v[0],bf1v[0],contextptr),contextptr);
 	bf1=gen(bf1v,bf1.subtype);
       }
       if (bf2.type==_VECT){
@@ -9066,8 +9128,6 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
       vars=makevecteur(vars,symbolic(at_equal,makesequence(v__IDNT_e,symbolic(at_interval,makesequence(vmin,vmax)))));
       curve3d=true;
     }
-    if (tstep<0)
-      tstep=(tmax-tmin)/gnuplot_pixels_per_eval;
     if (vars.type==_VECT && vars._VECTptr->size()>=2){
       vecteur v=*vars._VECTptr;
       if (v.size()!=2)
@@ -9083,6 +9143,8 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     }
     if (!readrange(vars,tmin,tmax,vars,tmin,tmax,contextptr))
       return gensizeerr(gettext("2nd arg must be a free variable"));
+    if (tstep<0)
+      tstep=(tmax-tmin)/gnuplot_pixels_per_eval;
     return plotparam(f,vars,attributs,densityplot,xmin,xmax,ymin,ymax,tmin,tmax,tstep,eq,parameq,vparam,contextptr);
   }
   gen _plotparam(const gen & args,const context * contextptr){
@@ -9316,7 +9378,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     if (theta.type!=_IDNT)
       return gensizeerr(gettext("2nd arg must be a free variable"));    
     // vargs.front()=symbolic(at_re,rho)*exp(cst_i*degtorad(theta,contextptr),contextptr);
-    vargs.front()=makevecteur(rho*cos(angletorad(theta,contextptr),contextptr),rho*sin(angletorad(theta,contextptr),contextptr));
+    vargs.front()=rho*exp(cst_i*angletorad(theta,contextptr),contextptr); //makevecteur(rho*cos(angletorad(theta,contextptr),contextptr),rho*sin(angletorad(theta,contextptr),contextptr));
     return _plotparam(gen(vargs,_SEQ__VECT),contextptr);
   }
   static const char _plotpolar_s []="plotpolar";
@@ -9699,6 +9761,12 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 	  // return _resultant(makevecteur(xt-x,yt-y,v[1]),contextptr);
 	  return symbolic(at_equal,makesequence(rationalparam2equation(v[0],v[1],x,y,contextptr),0));
 	}
+        if (v[1]==x || v[1]==y){
+          gen t(t__IDNT_e);
+          xt=subst(xt,v[1],t,0,contextptr);
+          yt=subst(yt,v[1],t,0,contextptr);
+          v[1]=t;
+        }
 	vecteur w(solve(xt-x,v[1],0,contextptr));
 	if (w.empty())
 	  return gensizeerr(gettext("Can't isolate"));
@@ -11335,7 +11403,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 
   gen _couleur(const gen & a,GIAC_CONTEXT){
     if (is_undef(a)) return a;
-#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined EMCC || defined EMCC2
+#if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS ||defined KHICAS || defined SDL_KHICAS || defined EMCC || defined EMCC2
 #else    
     /* display image, addition by L. Marohnić */
     rgba_image *img;
@@ -11403,7 +11471,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     v[1]=c;
     gen e=symbolic(at_pnt,gen(v,_PNT__VECT));
     history_plot(contextptr).push_back(e);
-#ifndef KHICAS
+#if !defined KHICAS && !defined SDL_KHICAS
     if (io_graph(contextptr))
       __interactive.op(e,contextptr);    
 #endif
@@ -11487,7 +11555,7 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     read_tmintmaxtstep(v,t,3,tmin,tmax,tstep,tminmax_defined,tstep_defined,contextptr);
     if (tmin>tmax || tstep<=0)
       return gensizeerr(gettext("Time"));
-#ifdef KHICAS
+#if defined KHICAS || defined SDL_KHICAS
     int maxstep=80;
 #else
     int maxstep=500;
@@ -11515,31 +11583,32 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     }
     if (dim3 && vs>3)
       dim3=(v[3]!=at_plan);
-    vecteur res1v,resv;
+    vecteur res1v;
     gen t0f=evalf_double(t0,1,contextptr);
     double d0=t0f.type==_DOUBLE_?t0f._DOUBLE_val:0;
     if (tmin<d0){
       gen res1=odesolve(t0,tmin,f,y0,tstep,curve,ymin,ymax,maxstep,contextptr);
       if (is_undef(res1)) return res1;
-      res1v=*res1._VECTptr;
+      res1v.swap(*res1._VECTptr);
       std::reverse(res1v.begin(),res1v.end());
     }
     res1v.push_back(makevecteur(t0,y0));
     if (tmax>d0){
       gen res2=odesolve(t0,tmax,f,y0,tstep,curve,ymin,ymax,maxstep,contextptr);
       if (is_undef(res2)) return res2;
-      resv=mergevecteur(res1v,*res2._VECTptr);
+      const vecteur & v=*res2._VECTptr;
+      res1v.reserve(res1v.size()+v.size());
+      for (int i=0;i<v.size();++i)
+        res1v.push_back(v[i]);
     }
-    else
-      resv=res1v;
     // make the curve
-    const_iterateur it=resv.begin(),itend=resv.end();
+    const_iterateur it=res1v.begin(),itend=res1v.end();
     vecteur res;
     res.reserve(itend-it);
     for (;it!=itend;++it){
       if (it->type!=_VECT || it->_VECTptr->empty() || it->_VECTptr->back().type!=_VECT) 
 	continue;
-      vecteur tmp=*it->_VECTptr->back()._VECTptr;
+      const vecteur &tmp=*it->_VECTptr->back()._VECTptr;
       if (tmp.size()!=2 || is_undef(tmp.front()) || is_undef(tmp.back()))
 	continue;
       if (dim3)
@@ -11580,11 +11649,8 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
       pthread_mutex_unlock(&interactive_mutex);
 #endif
     }
-    vecteur xy_v;
-    xy_v.push_back(x);
-    xy_v.push_back(y);
-    gen xp_eval,yp_eval,xy(xy_v),origine;
-    vecteur curxcury(2);
+    // vecteur xy_v(makevecteur(x,y)),xy(xy_v),curxcury(2);
+    gen xp_eval,yp_eval,origine;
     vecteur res;
     double echelle,minxstepystep;
     if (xstep<ystep) minxstepystep=xstep; else minxstepystep=ystep;
@@ -11594,12 +11660,14 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     res.reserve(n1*n2+1);
     for (double curx=xmin;curx<=xmax;curx+=scaling*xstep){
       if (ctrl_c || interrupted) break;
-      curxcury[0]=curx;
+      // curxcury[0]=curx;
+      gen xpx(subst(xp,x,curx,false,contextptr));
+      gen ypx(subst(yp,x,curx,false,contextptr));
       for (double cury=ymin;cury<=ymax;cury+=scaling*ystep){
 	if (ctrl_c || interrupted) break;
-	curxcury[1]=cury;
-	xp_eval=subst(xp,xy,curxcury,false,contextptr).evalf2double(eval_level(contextptr),contextptr);
-	yp_eval=subst(yp,xy,curxcury,false,contextptr).evalf2double(eval_level(contextptr),contextptr);
+	// curxcury[1]=cury;
+	xp_eval=subst(xpx,y,cury,false,contextptr).evalf2double(eval_level(contextptr),contextptr);
+	yp_eval=subst(ypx,y,cury,false,contextptr).evalf2double(eval_level(contextptr),contextptr);
 	if ((xp_eval.type==_DOUBLE_) && (yp_eval.type==_DOUBLE_)){
 	  double xpd=xp_eval._DOUBLE_val,ypd=yp_eval._DOUBLE_val;
 	  if (normalize){
@@ -11726,10 +11794,17 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     ystep=(ymax-ymin)/(jstep?jstep:nstep);
     return true;
   }
+
+  gen lastplotode0,lastplotode1;
   // args=[dx/dt,dy/dt,x,y] or [dy/dx,x,y]
   // or [ [dx/dt,dy/dt], [x,y] ] or [ dy/dx, [x,y]]
   gen _plotfield(const gen & args,const context * contextptr){
     if ( args.type==_STRNG && args.subtype==-1) return  args;
+    if (args.type!=_VECT){
+      vecteur argu(3);
+      argu[0]=lastplotode0; argu[1]=lastplotode1; argu[2]=args;
+      return plotode(argu,contextptr);
+    }
     vecteur attributs;
     gen xp,yp,x,y;
     double xmin,xmax,ymin,ymax,xstep,ystep;
@@ -11738,6 +11813,9 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     if (!read_plotfield_args(args,xp,yp,x,y,xmin,xmax,xstep,ymin,ymax,ystep,attributs,normalize,initcondv,contextptr))
       return gensizeerr(contextptr);
     int s=initcondv.size();
+    if (s>=2){
+      lastplotode0=initcondv[0]; lastplotode1=initcondv[1];
+    }
     double scaling=2;
     if (s>2){
       vecteur res;
@@ -11842,7 +11920,11 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
 #if 1 // def NSPIRE
     gen_map m;
 #else
+#ifdef CPP11
+    gen_map m(islesscomplexthanf);
+#else
     gen_map m(ptr_fun(islesscomplexthanf));
+#endif
 #endif
     int taille;
     is >> taille;
@@ -12784,17 +12866,31 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
     gen dfx=derive(f_orig,x,contextptr),dfy=derive(f_orig,y,contextptr);
     if (is_undef(dfx) || is_undef(dfy))
       return dfx+dfy;
+    {
+      gen x1("x1",contextptr); sto(-dfy,x1,contextptr);
+      gen y1("y1",contextptr); sto(dfx,y1,contextptr);
+      gen tmp(string2gen("implicit",false));
+      gen x2("x2",contextptr); sto(tmp,x2,contextptr);
+      gen y2("y2",contextptr); sto(tmp,y2,contextptr);
+    }
     vecteur localvar(makevecteur(xloc,yloc));
     context * newcontextptr=(context *) contextptr;
     int protect=giac_bind(makevecteur(xmin,ymin),localvar,newcontextptr);
     vector< vector<bool> > visited(nxstep+2,vector<bool>(nystep+2));
     // vector< vector<bool> > visited(nxstep+2,vector<bool>(nystep+2) );
-    vector< vector<double> > 
-      fxy(nxstep+1,vector<double>(nystep+1)),
-      dfxorig(nxstep+1,vector<double>(nystep+1)),
-      dfyorig(nxstep+1,vector<double>(nystep+1)),
-      dfxyorig_abs(nxstep+1,vector<double>(nystep+1));
-    vector< vector<double> > xorig(nxstep+1,vector<double>(nystep+1)),yorig(nxstep+1,vector<double>(nystep+1));
+    // 6 matrices of size N=(nxstep+1)*(nystep+1) = 48*N bytes, that's a lot
+    // do not alloc x/yorig etc. until it's required
+#if 1
+    typedef float flott;
+#else
+    typedef double flott;
+#endif
+    vector< vector<flott> >
+      fxy(nxstep+1,vector<flott>(nystep+1)),
+      dfxorig(nxstep+1,vector<flott>(0)),
+      dfyorig(nxstep+1,vector<flott>(0)),
+      dfxyorig_abs(nxstep+1,vector<flott>(0)),
+      xorig(nxstep+1,vector<flott>(0)),yorig(nxstep+1,vector<flott>(0));
     gen gtmp;
     // initialize each cell to non visited
     local_sto_double(ymin,yloc,newcontextptr);
@@ -13063,6 +13159,11 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
       } // end if (!pathfound)
       chemin.push_back(gen(xcurrent,ycurrent));
       visited[iorig][jorig]=true;
+      xorig[iorig].resize(nystep+1);
+      yorig[iorig].resize(nystep+1);
+      dfxorig[iorig].resize(nystep+1);
+      dfyorig[iorig].resize(nystep+1);
+      dfxyorig_abs[iorig].resize(nystep+1);
       int icur,jcur,oldi=iorig,oldj=jorig;
       xorig[iorig][jorig]=xcurrent;
       yorig[iorig][jorig]=ycurrent;
@@ -13326,6 +13427,11 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
 	}
 	else {
 	  visited[icur][jcur]=true;
+          xorig[icur].resize(nystep+1);
+          yorig[icur].resize(nystep+1);
+          dfxorig[icur].resize(nystep+1);
+          dfyorig[icur].resize(nystep+1);
+          dfxyorig_abs[icur].resize(nystep+1);
 	  dfxorig[icur][jcur]=dfxcurrent;
 	  dfyorig[icur][jcur]=dfycurrent;
 	  xorig[icur][jcur]=xcurrent;
@@ -13352,6 +13458,12 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
 #endif
     io_graph(old_iograph,contextptr);
 #endif // WIN32
+#if 0
+    double S=0;
+    for (int i=0;i<=nxstep;++i)
+      S += xorig[i].size()+yorig[i].size()+dfxorig[i].size()+dfyorig.size()+dfxyorig_abs[i].size();
+    COUT << "nstep=" << (nxstep+1)*(nystep+1) << ", memory ratio=" << S/(nxstep+1)/(nystep+1) << "\n";
+#endif
     return res; // gen(res,_SEQ__VECT);
     // return zero;
 #endif // RTOS_THREADX
@@ -13362,12 +13474,13 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
       return gensizeerr(gettext("Variables must be free"));
     gen a,b,c,d;
     if (cklinear && is_linear_wrt(f_orig,y,a,b,contextptr) && a!=0){
-      if (is_linear_wrt(b,x,c,d,contextptr)){
+      if (is_linear_wrt(b,x,c,d,contextptr) && is_constant_wrt(a,x,contextptr)){
 	// a*y+c*x+d=0 -> droite(-d/a*i,1+(-d-c)/a*i)
-	gen A=-d/a*cst_i,B=A+1-c/a*cst_i;
-	return _droite(makesequence(A,B),contextptr);
+	gen A=-d/a*cst_i,B=A+1-c/a*cst_i; return _droite(makesequence(A,B),contextptr);
       }
       // y=-b/a
+      if (nxstep>1024)
+        nxstep=1024;
       return plotfunc(-b/a,x,attributs,0,xmin,xmax,ymin,ymax,-5,5,nxstep,0,false,contextptr);
     }
     if (cklinear && is_linear_wrt(f_orig,x,a,b,contextptr) && a!=0){
@@ -13377,6 +13490,8 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
       }
       // x=-b/a
       gen d=_droite(makesequence(0,1+cst_i),contextptr);
+      if (nxstep>1024)
+        nxstep=1024;
       return symetrie(d,plotfunc(-b/a,y,attributs,0,xmin,xmax,ymin,ymax,-5,5,nxstep,0,false,contextptr),contextptr);
     }
     bool cplx=complex_mode(contextptr);
@@ -13397,7 +13512,13 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
   gen _plotimplicit(const gen & args,const context * contextptr){
     if ( args.type==_STRNG && args.subtype==-1) return  args;
     if (args.type!=_VECT)
-      return plotimplicit(remove_equal(args),vx_var,y__IDNT_e,gnuplot_xmin,gnuplot_xmax,gnuplot_ymin,gnuplot_ymax,20*gnuplot_pixels_per_eval,0,epsilon(contextptr),vecteur(1,default_color(contextptr)),false,true,contextptr,3);
+      return plotimplicit(remove_equal(args),vx_var,y__IDNT_e,gnuplot_xmin,gnuplot_xmax,gnuplot_ymin,gnuplot_ymax,
+#ifdef KHICAS
+                          5*gnuplot_pixels_per_eval,
+#else
+                          20*gnuplot_pixels_per_eval,
+#endif
+                          0,epsilon(contextptr),vecteur(1,default_color(contextptr)),false,true,contextptr,3);
     // vecteur v(plotpreprocess(args));
     vecteur v(*args._VECTptr);
     if (v.size()<2)
@@ -14371,7 +14492,7 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
       return g.print(context0);
   }
 
-#if !defined KHICAS // in kdisplay.cc
+#if !defined KHICAS && !defined SDL_KHICAS // in kdisplay.cc
 #if defined NSPIRE || defined FXCG
   logo_turtle vecteur2turtle(const vecteur & v){
     return logo_turtle();
@@ -15413,7 +15534,7 @@ gen _vers(const gen & g,GIAC_CONTEXT){
       _avance(gy,contextptr);
       _tourne_droite(-90,contextptr);
     }
-    return _polygone_rempli(-8,contextptr);
+    return _polygone_rempli(-4,contextptr);
   }
   static const char _rectangle_plein_s []="rectangle_plein";
   static define_unary_function_eval2 (__rectangle_plein,&_rectangle_plein,_rectangle_plein_s,&printastifunction);
