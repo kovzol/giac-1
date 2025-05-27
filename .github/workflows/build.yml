@@ -119,7 +119,7 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: prerequisites
-      run: brew install coreutils java15
+      run: brew install coreutils openjdk@17
       # run: brew install gmp mpfr coreutils java11
     - name: build
       run: ./gradlew javagiacOsx_amd64SharedLibrary
