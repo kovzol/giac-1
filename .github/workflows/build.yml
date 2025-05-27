@@ -127,7 +127,10 @@ jobs:
         echo 'export PATH="/opt/homebrew/opt/openjdk@11/bin:$PATH"' >> /Users/runner/.bash_profile
         export CPPFLAGS="-I/opt/homebrew/opt/openjdk@11/include"
     - name: build
-      run: ./gradlew javagiacOsx_amd64SharedLibrary
+      run: |
+        export JAVA_HOME=/opt/homebrew/opt/openjdk@11/
+        java --version
+        ./gradlew javagiacOsx_amd64SharedLibrary
 
   windows_msys2_clang64-native-cmake:
     runs-on: windows-latest
