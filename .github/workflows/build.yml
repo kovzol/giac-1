@@ -112,7 +112,9 @@ jobs:
       # run: brew install coreutils cmake
       run: brew install gmp mpfr readline coreutils cmake
     - name: build
-      run: mkdir cbuild && cd cbuild && cmake .. && make
+      run: |
+        sed -i -e s/'${GMP_STATIC}'/gmp/g -e s/'${MPFR_STATIC}'/mpfr/g CMakeLists.txt
+        mkdir cbuild && cd cbuild && cmake .. && make
 
   mac-jnidll-gradle:
     runs-on: macos-latest
