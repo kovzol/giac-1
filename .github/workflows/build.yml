@@ -109,8 +109,8 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     - name: prerequisites
-      run: brew install coreutils cmake
-      # run: brew install gmp mpfr readline coreutils cmake
+      # run: brew install coreutils cmake
+      run: brew install gmp mpfr readline coreutils cmake
     - name: build
       run: mkdir cbuild && cd cbuild && cmake .. && make
 
