@@ -208,9 +208,9 @@ namespace giac {
       return 0;
     }
     f1=_texpand(f1,contextptr);
-    f1=normal(f1,contextptr);
+    f1=normal(recursive_ratnormal(f1,contextptr),contextptr);
     f2=_texpand(f2,contextptr);
-    f2=normal(f2,contextptr);
+    f2=normal(recursive_ratnormal(f2,contextptr),contextptr);
     if (f1==f2)
       return 1;
     if (is_zero(ratnormal(invfracpow(f1+f2,contextptr),contextptr)))
@@ -905,12 +905,38 @@ namespace giac {
     return subst(g,inv_v,applyinv_v,false,contextptr);
   }
 
+  bool helper_polyexp(const gen & gan,const gen & gad_b,const gen & expo_a,const gen & x,gen & res,GIAC_CONTEXT){
+    // -1/gad_b*int(gan/(exp(expo_a*t)-1),t,0,inf)
+    gen ganv=_coeff(makesequence(gan,x),contextptr);
+    if (ganv.type==_VECT && !ganv._VECTptr->empty() && is_zero(ganv._VECTptr->back())){
+      res=0;
+      vecteur v=*ganv._VECTptr;
+      gen facti=pow(expo_a,-2,contextptr);
+      for (int i=1;i<int(v.size());++i){
+        gen coeff=v[v.size()-i-1];
+        if (!is_zero(coeff))
+          res += coeff*facti*Zeta(i+1,contextptr);
+        facti=facti*gen(i+1)/expo_a;
+      }
+      res=ratnormal(-res/gad_b,contextptr);
+      return true;
+    }
+    return false;
+  }
+    
   static bool intgab(const gen & g0,const gen & x,const gen & a,const gen & b,gen & res,bool nonrecursive,GIAC_CONTEXT){
     if (x.type!=_IDNT)
       return false;
     if (is_zero(g0)){
       res=zero;
       return true;
+    }
+    if (is_zero(a+b)){
+      int i=is_even_odd(g0,x,contextptr);
+      if (i==2){
+        res=zero;
+        return true;
+      }
     }
     if (a==unsigned_inf || b==unsigned_inf){
       *logptr(contextptr) << gettext("Please use +infinity or -infinity since infinity is unsigned") << '\n';
@@ -1178,23 +1204,16 @@ namespace giac {
 	    if (rlvarx(gan,x).size()==1 && is_linear_wrt(gad,expo,gad_a,gad_b,contextptr)){
 	      // gad=gad_a*(expo+gad_b/gad_a)
 	      gen test=ratnormal(gad_a*exp(expo_b,contextptr)+gad_b,contextptr);
-	      if (is_zero(test)){
-		// -1/gad_b*int(gan/(exp(expo_a*t)-1),t,0,inf)
-		gen ganv=_coeff(makesequence(gan,x),contextptr);
-		if (ganv.type==_VECT && !ganv._VECTptr->empty() && is_zero(ganv._VECTptr->back())){
-		  res=0;
-		  vecteur v=*ganv._VECTptr;
-		  gen facti=pow(expo_a,-2,contextptr);
-		  for (int i=1;i<int(v.size());++i){
-		    gen coeff=v[v.size()-i-1];
-		    if (!is_zero(coeff))
-		      res += coeff*facti*Zeta(i+1,contextptr);
-		    facti=facti*gen(i+1)/expo_a;
-		  }
-		  res=ratnormal(-res/gad_b,contextptr);
-		  return true;
-		}
-	      } // end if is_zero(test)
+	      if (is_zero(test) && helper_polyexp(gan,gad_b,expo_a,x,res,contextptr))
+                return true;
+              test=ratnormal(gad_a*exp(expo_b,contextptr)-gad_b,contextptr);
+              if (is_zero(test)){
+                gen res2,res1;
+                if (helper_polyexp(gan,gad_b,2*expo_a,x,res2,contextptr) && helper_polyexp(gan,gad_b,expo_a,x,res1,contextptr)){
+                  res=ratnormal(2*res2-res1,contextptr);
+                  return true;
+                }
+              }
 	    } // end if (rlvarx(gan,x).size()==1
 	  } // end if gand.type==_VECT
 	  identificateur t(" tintgab");

@@ -1009,8 +1009,15 @@ namespace giac {
 	  }
 	}
       }
-      if (!is_one(p1))
-	f.push_back(facteur<polynome>(polynome(p1,1),1));
+      if (!is_one(p1)){
+        if (p1.type==_POLY){
+          factorization fp1=rsqff(*p1._POLYptr);
+          for (int i=0;i<fp1.size();++i)
+            f.push_back(facteur<polynome>(polynome(fp1[i].fact,1),fp1[i].mult));
+        }
+        else
+          f.push_back(facteur<polynome>(polynome(p1,1),1));
+      }
       return f;
     }
     factorization ff(rsqff(s.trunc1()));
@@ -1141,8 +1148,10 @@ namespace giac {
       }
       // Check sign of D
       vecteur Dl(l);
-      if (embeddings && Dl[embeddings].type==_VECT)
-	Dl=*Dl[embeddings]._VECTptr;
+      if (embeddings && Dl[embeddings].type==_VECT){
+        Dl=vecteur(l.begin()+embeddings,l.end());
+	// Dl=*Dl[embeddings]._VECTptr;
+      }
       if (is_positive(r2e(-D,Dl,contextptr),contextptr)){
 	D=-D;
 	if (d%2)
@@ -1828,6 +1837,8 @@ namespace giac {
     iext=makevecteur(1,0,1);
     gen currentext=Extension;
     common_EXT(iext,currentext,0,contextptr);
+    if (iext.type==_VECT)
+      iext=algebraic_EXTension(makevecteur(1,0),iext);
     if (currentext.type==_EXT)
       currentext=*(currentext._EXTptr+1);
     Extension=change_subtype(Extension,_POLY1__VECT);
@@ -2844,10 +2855,18 @@ namespace giac {
     vecteur w(v);
     for (unsigned i=0;i<v.size();++i){
       gen r=ratnormal(v[i]._SYMBptr->feuille/g,contextptr);
-      if (r.type==_INT_ && r.val!=1 && absint(r.val)<=INT_KARAMUL_SIZE)
-	w[i]=symbolic(at_pow,makesequence(symb_exp(g),r));
+      if (r.type==_INT_ && absint(r.val)<=INT_KARAMUL_SIZE){
+        if (r.val!=1)
+          w[i]=symbolic(at_pow,makesequence(symb_exp(g),r));
+        // if r==1 we keep w[i] unchanged but we do not erase it for the final check list size
+      }
+      else {
+        v.erase(v.begin()+i);
+        w.erase(w.begin()+i);
+        --i;
+      }
     }
-    return v==w?e:subst(e,v,w,false,contextptr);
+    return (v==w || v.size()==1) ? e : subst(e,v,w,false,contextptr);
   }
 
   static gen in_normalize_sqrt(const gen & e,vecteur & L,bool keep_abs,GIAC_CONTEXT){
@@ -4570,6 +4589,7 @@ namespace giac {
           gen p=f._VECTptr->front(),pmin=f._VECTptr->back();
           if (p.type==_VECT && pmin.type==_VECT && p._VECTptr->size()>=pmin._VECTptr->size())
             p=p%pmin;
+          pmin.subtype=_POLY1__VECT;
           wr.push_back(horner(p,symbolic(at_rootof,pmin)));
         }
       }
@@ -4636,6 +4656,8 @@ namespace giac {
         if (g.type!=_VECT || g._VECTptr->size()!=2){
           p=makevecteur(1,0);
           pmin=g;
+          algext_cur = gen2vecteur(pmin).size()-1;
+          algext_order *= algext_cur;
         }
         else {
           p=g[0];
@@ -5199,6 +5221,20 @@ namespace giac {
     return true;
   }
 
+  bool algnum_cleanup(gen & e,GIAC_CONTEXT){
+    if (e.type==_EXT) {
+      e=symb_rootof(*e._EXTptr,*(e._EXTptr+1),contextptr);
+      return true;
+    }
+    if (e.type==_FRAC){
+      if (algnum_cleanup(e._FRACptr->num,contextptr)){
+        e=e._FRACptr->num/e._FRACptr->den;
+        return true;
+      }
+    }
+    return false;
+  }
+
   // detect if e is in an algebraic extension of Q, simplifies
   bool algnum_normal(gen & e,GIAC_CONTEXT){
 #ifdef USE_GMP_REPLACEMENTS
@@ -5238,6 +5274,7 @@ namespace giac {
     }
     if (!algnum_rewritable(E,syst,vars,v,varapprox,nums,diffpmin,pminv,pmin,var,ext,r,sep,rootofallowed,!rootofallowed/* ckdeg2*/,extpar,e,contextptr))
       return false;
+    algnum_cleanup(e,contextptr);
     return true;
 #else
     G=_gbasis(makesequence(syst,vars,change_subtype(_RUR_REVLEX,_INT_GROEBNER)),contextptr);
@@ -5319,6 +5356,7 @@ namespace giac {
       pmin=horner(pminv,var);
       if (!algnum_rewritable(E,syst,vars,v,varapprox,nums,diffpmin,pminv,pmin,var,ext,r,sep,rootofallowed,true/* ckdeg2*/,e,contextptr))
         return false;
+      algnum_cleaup(e,contextptr);
       return true;
     }
 #endif
@@ -5447,8 +5485,31 @@ namespace giac {
 	    tmp=-vtmp.back()/vtmp.front();
 	  *it=pow(base,num.val/den.val,contextptr)*tmp;
 	}
-	else
-	  *it= pow(base, num.val /den.val,contextptr) *pow(base,rdiv(num.val%den.val,den),contextptr);
+	else {
+          // extract from the root before pow
+          gen base1=1,base2=1;
+          if (den.val==1)
+            base2=base;
+          else {
+            gen fbase=_factors(base,contextptr);
+            if (fbase.type==_VECT){
+              vecteur v=*fbase._VECTptr;
+              for (int i=0;i<v.size();i+=2){
+                int mult=v[i+1].val;
+                if (mult%den.val==0){
+                  if (den.val%2==0 && is_real(v[i],contextptr))
+                    v[i]=abs(v[i],contextptr);
+                  base1=base1*pow(v[i],mult*num.val/den.val,contextptr);
+                }
+                else
+                  base2=base2*pow(v[i],mult,contextptr);
+              }
+            }
+            else
+              base2=base;
+          }
+          *it= base1*pow(base2,num.val/den.val,contextptr)*pow(base2,rdiv(num.val%den.val,den),contextptr);
+        }
       }
     }
     if (l!=l_subst) 

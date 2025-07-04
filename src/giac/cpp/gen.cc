@@ -266,6 +266,9 @@ namespace giac {
     }
 #endif
     void * p =  malloc(size);  
+#if defined NUMWORKS || defined KHICAS
+    if (!p) exit(0);
+#endif
 #ifndef NO_STDEXCEPT
     if(!p) {
       std::bad_alloc ba;
@@ -3681,9 +3684,20 @@ namespace giac {
       r=s; i=0; return; 
     }
     if (u==at_inv){
-      gen tmp=inv(pow(ref,2)+pow(imf,2),contextptr);
-      r=ref*tmp;
-      i=-imf*tmp;
+      if (1){ // new version
+        gen g=gcd(ref,imf,contextptr);
+        if (!is_one(g)){
+          ref=ratnormal(ref/g);
+          imf=ratnormal(imf/g);
+        }
+        gen tmp=inv(pow(ref,2)+pow(imf,2),contextptr);
+        r=ref*tmp/g;
+        i=-imf*tmp/g;
+      } else { // old version
+        gen tmp=inv(pow(ref,2)+pow(imf,2),contextptr);
+        r=ref*tmp;
+        i=-imf*tmp;
+      }
       return;
     }
     if (u==at_exp) {
@@ -4149,6 +4163,7 @@ namespace giac {
       return plus_inf;
     if (is_undef(s))
       return s;
+    // if (contextptr && contextptr->assumedpositive && equalposcomp(*contextptr->assumedpositive,simplifier(s,contextptr))) return s;
     if (!eval_abs(contextptr) || has_num_coeff(s))
       return new_ref_symbolic(symbolic(at_abs,s));
     gen r,i;
@@ -4253,6 +4268,7 @@ namespace giac {
     case _IDNT:
       return idnt_abs(a,contextptr);
     case _SYMB:
+      //if (contextptr && contextptr->assumedpositive && equalposcomp(*contextptr->assumedpositive,simplifier(a,contextptr))) return a;
       if (is_equal(a))
 	return apply_to_equal(a,abs,contextptr);
       if (a.is_symb_of_sommet(at_pnt)){
@@ -6965,6 +6981,7 @@ namespace giac {
 	// (e^a)^b=e^(a*b)
 	// but we keep (e^a)^b if b is integer and e^(a*b) is not simplified
 	// for rational dependance
+        // or inside integration
 	gen res=exp(base._SYMBptr->feuille*exponent,contextptr);
 	if (exponent.type!=_INT_ || !res.is_symb_of_sommet(at_exp))
 	  return res;
@@ -7674,6 +7691,12 @@ namespace giac {
 	  return new_ref_symbolic(symbolic(at_inv,a));
       }
     case _VECT:
+      if (a.subtype==_SEQ__VECT && a._VECTptr->size()==2 && a._VECTptr->back().subtype==_INT_SOLVER && is_squarematrix(a._VECTptr->front())){
+        matrice res;
+        gen a0=a._VECTptr->front();
+        if (minv(*a0._VECTptr,res,true,a._VECTptr->back().val,contextptr))
+          return res;
+      }
       if (a.subtype==_PNT__VECT)
 	return gen(invfirst(*a._VECTptr),a.subtype);
       if (a.subtype==_POLY1__VECT)
@@ -10968,6 +10991,7 @@ namespace giac {
           if (is_positive(-resf,contextptr))
             res=-res;
         } catch (std::runtime_error&e){
+          *logptr(contextptr) << "Previous error catched\n";
         }
 #endif
       }
@@ -11087,8 +11111,8 @@ namespace giac {
 	  return gensizeerr(gettext("gen.cc:simplify"));
 	egcd(*(d._EXTptr->_VECTptr),*((d._EXTptr+1)->_VECTptr),0,u,v,dd);
         gen tmp=algebraic_EXTension(u,*((d._EXTptr+1)->_VECTptr));
-	if (tmp.type!=_EXT){ 
-	  return gensizeerr(gettext("gen.cc:simplify/tmp.type!=_EXT")); 
+	if (tmp.type!=_EXT){
+          return gensizeerr(gettext("gen.cc:simplify/tmp.type!=_EXT")); 
 	  // return 1;
 	}
 	n=n*tmp;
@@ -12733,6 +12757,10 @@ int sprint_int(char * s,int r){
 
 void sprint_double(char * s,double d){
   char * buf=s;
+  if (my_isnan(d)){
+    strcpy(buf,"nan");
+    return;
+  }
   if (d==0){
     strcpy(buf,"0.0");
     return;
@@ -16883,7 +16911,13 @@ void sprint_double(char * s,double d){
       strcat(filename,".py");
 #endif
       char buf[4096]="def f(x):\n  return x*x\n";
-      if (file_exists(filename)){
+      if (
+#ifdef KHICAS
+          file_exists(filename)
+#else
+          !access(filename,R_OK)
+#endif
+          ){
 	const char * ch=read_file(filename);
 	S=ch;
 	if (S.size()>sizeof(buf))

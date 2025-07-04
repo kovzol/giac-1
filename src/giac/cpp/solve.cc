@@ -1638,6 +1638,8 @@ namespace giac {
       }
       e=factor(e,x,false,contextptr);
     }
+    if (e.type!=_SYMB)
+      return;
     if (e._SYMBptr->sommet==at_inv || (e._SYMBptr->sommet==at_pow && is_positive(-e._SYMBptr->feuille._VECTptr->back(),contextptr))){
       gen ef=e._SYMBptr->feuille;
       if (e._SYMBptr->sommet==at_pow)
@@ -4500,7 +4502,8 @@ namespace giac {
   define_unary_function_ptr5( at_cfsolve ,alias_at_cfsolve,&__cfsolve,_QUOTE_ARGUMENTS,true);
 
   vecteur sxa(const vecteur & sl_orig,const vecteur & x,GIAC_CONTEXT){
-    vecteur sl(sl_orig);
+    vecteur sl;
+    aplatir(sl_orig,sl,true);
     int d;
     d=int(x.size());
     int de;
@@ -8097,7 +8100,7 @@ namespace giac {
       }
     }
     // extract gcd for systems like eq1:=4*v5*v6^2-6*v6^3-12*v5*v6+23*v6^2-15*v6; eq2:=12*v5^2-10*v5*v6-12*v6^2-9*v5+46*v6-30; solve([eq1,eq2],[v5,v6]);
-    if (1){
+    if (eq.size()>1){
       gen G=0;
       for (int i=0;i<eq.size();++i){
         G=gcd(G,eq[i],contextptr);
@@ -8251,7 +8254,15 @@ namespace giac {
 	  // G[1] separating, G[2]=minpoly, G[3]=derivative, G[4..end]=solution
 	  if (debug_infolevel)
 	    *logptr(contextptr) << "Solutions = substitute roots of " << Gv[2] << " in " << vecteur(Gv.begin()+4,Gv.end()) << "/(" << Gv[3] << ")" << '\n';
-	  S=solve(Gv[2],rurvar,complexmode,contextptr);
+          if (deg>14){
+            // FIXME precision should be adapted for large degrees (and intervals should be used, like above with evalf_after)
+            int d=decimal_digits(contextptr);
+            decimal_digits(d+deg,contextptr);
+            S=solve(Gv[2],rurvar,complexmode,contextptr);
+            decimal_digits(d,contextptr);
+          }
+          else
+            S=solve(Gv[2],rurvar,complexmode,contextptr); 
 	}
 	vecteur res;
 	modpoly minp=gen2poly(_symb2poly(makesequence(Gv[2],rurvar),contextptr));
@@ -8521,13 +8532,24 @@ namespace giac {
 	if (equalposcomp(lidnt(stv),undef))
 	  continue;
 	int foundvars=int(stv.size());
-	gen curgf=_factors(ratnormal(ratnormal(subst(g,vecteur(var.end()-foundvars,var.end()),*st,false,contextptr),contextptr),contextptr),contextptr);
+        gen tmpg=subst(g,vecteur(var.end()-foundvars,var.end()),*st,false,contextptr);
+        tmpg=ratnormal(tmpg,contextptr);
+        tmpg=ratnormal(tmpg,contextptr);
+        if (tmpg.type!=_SYMB){
+          if (is_zero(tmpg)){ // 0==0 is verified
+            newsols.push_back(*st);
+            continue;
+          }
+          return vecteur(0); // no solution
+        }
+	gen curgf=_factors(tmpg,contextptr);
 	if (curgf.type!=_VECT) return vecteur(1,gensizeerr(contextptr));
 	const_iterateur curgfit=curgf._VECTptr->begin(),curgfend=curgf._VECTptr->end();
 	for (;curgfit!=curgfend;curgfit+=2){
 	  vecteur current=*st->_VECTptr;
 	  foundvars=int(st->_VECTptr->size());
 	  gen curg=*curgfit;
+          curg=normalize_sqrt(curg,contextptr);
 	  gen x;
 	  int xpos=0;
 	  // First search in current an identifier curg depends on

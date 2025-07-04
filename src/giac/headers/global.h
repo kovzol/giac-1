@@ -402,6 +402,7 @@ Boolean isLegalUTF8Sequence(const UTF8 *source, const UTF8 *sourceEnd);
   extern int ALG_EXT_DIGITS;
   // 0 use a unique algebraic extension, >0: don't search a unique alg ext if degree is >
   extern int TRY_FU_UPRIME;
+  extern int TRY_FU_UPRIME_MAXLEAFSIZE;
   extern int SOLVER_MAX_ITERATE;
   extern int MAX_PRINTABLE_ZINT;
   extern int MAX_RECURSION_LEVEL;
@@ -587,7 +588,7 @@ throw(std::runtime_error("Stopped by user interruption.")); \
   typedef void (* giac_callback)(const giac::gen & ,void * );
 
   struct thread_param {
-    bool _kill_thread;
+    int _kill_thread;
     int thread_eval_status;
     giac_callback f;
     void * f_param;
@@ -1203,8 +1204,8 @@ throw(std::runtime_error("Stopped by user interruption.")); \
   // Check if a thread_eval is active
   bool is_context_busy(GIAC_CONTEXT);
   // Check and set the kill thread flag
-  bool kill_thread(GIAC_CONTEXT);
-  void kill_thread(bool b,GIAC_CONTEXT);
+  int kill_thread(GIAC_CONTEXT);
+  void kill_thread(int b,GIAC_CONTEXT);
   // Thread eval status = 0 finished, =1 eval, =2 debug_wait_main
   int thread_eval_status(GIAC_CONTEXT);
   void thread_eval_status(int c,GIAC_CONTEXT);

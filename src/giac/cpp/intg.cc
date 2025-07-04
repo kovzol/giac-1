@@ -3108,6 +3108,8 @@ namespace giac {
     }
     const_iterateur vt=v.begin(),vtend=v.end();
     for (int i=0;(i<TRY_FU_UPRIME) && (vt!=vtend);++vt,++i){
+      if (taille(*vt,TRY_FU_UPRIME_MAXLEAFSIZE)>=TRY_FU_UPRIME_MAXLEAFSIZE)
+        continue;
       gen tmprem,u=linear_integrate_nostep(*vt,gen_x,tmprem,intmode|2,contextptr);
       if (is_undef(u) || !is_zero(tmprem)){
 	gen tst=*vt;
@@ -4038,7 +4040,7 @@ namespace giac {
       return gensizeerr(contextptr);
     if (s>=4 && complex_mode(contextptr)){
       complex_mode(false,contextptr);
-      gen res=_integrate(args,contextptr);
+      gen res=_integrate_(args,contextptr);
       complex_mode(true,contextptr);
       return res;
     }
@@ -4157,6 +4159,13 @@ namespace giac {
 	    v[2]=a; v[3]=b;
 	  }
 	  vecteur lv=lop(lvarx(v[0],v[1]),at_pow);
+          for (int i=0;i<lv.size();++i){
+            gen expo=lv[i]._SYMBptr->feuille._VECTptr->back();
+            if (expo.type==_INT_ && expo.val>0){
+              lv.erase(lv.begin()+i);
+              --i;
+            }
+          }
 	  lv=mergevecteur(lv,lop(lvarx(v[0],v[1]),at_surd));
 	  lv=mergevecteur(lv,lop(lvarx(v[0],v[1]),at_NTHROOT));
 	  if (lv.size()==1 && v[1].type==_IDNT){
@@ -4610,6 +4619,35 @@ namespace giac {
   }
   // "unary" version
   gen _integrate(const gen & args_,GIAC_CONTEXT){
+    bool setcplx=false;
+    if (!complex_mode(contextptr)){
+      // if there are ln inside, switch to complex mode
+      vecteur v;
+      gen x=vx_var,f=args_;
+      if (args_.type==_VECT && args_._VECTptr->size()>=2){
+        f=(*args_._VECTptr)[0];
+        x=(*args_._VECTptr)[1];
+      }
+      f=eval(f,1,contextptr);
+      rlvarx(f,x,v);
+      for (int i=0;i<v.size();++i){
+        gen g=v[i];
+        if (g.type!=_SYMB)
+          continue;
+        if (g._SYMBptr->sommet==at_ln){
+          gen f=g._SYMBptr->feuille;
+          if (f.type==_SYMB && (f._SYMBptr->sommet==at_exp || f._SYMBptr->sommet==at_abs))
+            continue;    
+          setcplx=true;
+        }
+        if (0 && g._SYMBptr->sommet==at_pow){
+          gen f=g._SYMBptr->feuille[0];
+          if (f.type==_SYMB && (f._SYMBptr->sommet==at_exp || f._SYMBptr->sommet==at_abs))
+            continue;    
+          setcplx=true;
+        }
+      }
+    }
     gen args(exactify_pow(args_));
     if (complex_variables(contextptr))
       *logptr(contextptr) << gettext("Warning, complex variables is set, this can lead to fairly complex answers. It is recommended to switch off complex variables in the settings or by complex_variables:=0; and declare individual variables to be complex by e.g. assume(a,complex).") << '\n';
@@ -4624,7 +4662,11 @@ namespace giac {
       *logptr(contextptr) << "Run purge(" << ass << "); or purge(unquote(assumptions)) to clear auto-assumptions\n" ;
       sto(ass,identificateur("assumptions"),contextptr);
     }
+    if (setcplx)
+      complex_mode(true,contextptr);
     gen res=_integrate_(args,contextptr);
+    if (setcplx)
+      complex_mode(false,contextptr);
     if (0){
       for (int i=0;i<ass.size();++i){
 	purgenoassume(ass[i],contextptr);
@@ -4960,7 +5002,7 @@ namespace giac {
       // could add a minimal number of intervals for integrals like
       // integrate(when(x > 2, 1,2),x,0,2.01) or int(frac(x),x,0,6.01)
       // but one will always find intervals where this would fail
-      if (!is_undef(ERR) && is_greater(eps,ERR/I30ABS,contextptr)) 
+      if (v.size()>=8 && !is_undef(ERR) && is_greater(eps,ERR/I30ABS,contextptr)) 
 	return true;
       // cut interval at maxerrpos in 2 parts
       vecteur & w = *v[maxerrpos]._VECTptr;

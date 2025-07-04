@@ -74,7 +74,9 @@ void sha256_init(SHA256_CTX *ctx);
 void sha256_update(SHA256_CTX *ctx, const BYTE data[], size_t len);
 void sha256_final(SHA256_CTX *ctx, BYTE hash[]);
 #else
+#ifndef EMCC2
 #include "sha256.h"
+#endif
 #endif
 #endif
 #if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined SDL_KHICAS
@@ -6123,7 +6125,7 @@ namespace giac {
 	  pthread_mutex_unlock(cptr->globalptr->_mutex_eval_status_ptr);
 	}
       }
-      kill_thread(true,cptr);
+      kill_thread(1,cptr);
       return 1;
     }
 #endif
@@ -7468,7 +7470,7 @@ namespace giac {
   static define_unary_function_eval (__cd,&_cd,_cd_s);
   define_unary_function_ptr5( at_cd ,alias_at_cd,&__cd,0,true);
 
-#if !defined GIAC_GGB && !defined NUMWORKS
+#if !defined GIAC_GGB && !defined NUMWORKS && !defined EMCC2
   // unix command sha256sum
   gen _sha256(const gen &g_,GIAC_CONTEXT){
     int offset=0;
@@ -9575,9 +9577,13 @@ namespace giac {
     return true;
   }
   gen _read(const gen & args,GIAC_CONTEXT){
+#ifdef NUMWORKS
+    if (inexammode()) return undef;
+#else
 #ifdef KHICAS
     if (exam_mode || nspire_exam_mode)
       return gensizeerr("Exam mode");
+#endif
 #endif
     if ( args.type==_STRNG &&  args.subtype==-1) return  args;
     size_t addr;
@@ -9607,6 +9613,9 @@ namespace giac {
   define_unary_function_ptr5( at_read ,alias_at_read ,&__read,0,T_RETURN);
 
   gen _read16(const gen & args,GIAC_CONTEXT){
+#ifdef NUMWORKS
+    if (inexammode()) return undef;
+#endif
     if ( args.type==_STRNG &&  args.subtype==-1) return  args;
     size_t addr;
     if (is_address(args,addr))
@@ -9650,6 +9659,9 @@ namespace giac {
   define_unary_function_ptr5( at_read16 ,alias_at_read16 ,&__read16,0,true);
 
   gen _read32(const gen & args,GIAC_CONTEXT){
+#ifdef NUMWORKS
+    if (inexammode()) return undef;
+#endif
     if ( args.type==_STRNG &&  args.subtype==-1) return  args;
     size_t addr;
     if (args.type==_VECT && args._VECTptr->size()==2 && args._VECTptr->back().type==_INT_){

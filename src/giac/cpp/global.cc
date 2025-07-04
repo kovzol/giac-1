@@ -3133,7 +3133,7 @@ extern "C" void Sleep(unsigned int miliSecond);
 #endif
   }
 
-  thread_param::thread_param(): _kill_thread(false), thread_eval_status(-1), v(6)
+  thread_param::thread_param(): _kill_thread(0), thread_eval_status(-1), v(6)
 #ifdef HAVE_LIBPTHREAD
 #ifdef __MINGW_H
 			      ,eval_thread(),stackaddr(0)
@@ -3162,12 +3162,12 @@ extern "C" void Sleep(unsigned int miliSecond);
     return (contextptr && contextptr->globalptr)?contextptr->globalptr->_thread_param_ptr:context0_thread_param_ptr();
   }
 
-  bool kill_thread(GIAC_CONTEXT){
+  int kill_thread(GIAC_CONTEXT){
     thread_param * ptr= (contextptr && contextptr->globalptr )?contextptr->globalptr->_thread_param_ptr:0;
     return ptr?ptr->_kill_thread:context0_thread_param_ptr()->_kill_thread;
   }
 
-  void kill_thread(bool b,GIAC_CONTEXT){
+  void kill_thread(int b,GIAC_CONTEXT){
     thread_param * ptr= (contextptr && contextptr->globalptr )?contextptr->globalptr->_thread_param_ptr:0;
     if (!ptr)
       ptr=context0_thread_param_ptr();
@@ -3793,6 +3793,7 @@ extern "C" void Sleep(unsigned int miliSecond);
   int MAX_ALG_EXT_ORDER_SIZE = 4;
   int MAX_COMMON_ALG_EXT_ORDER_SIZE = 16;
   int TRY_FU_UPRIME=5;
+  int TRY_FU_UPRIME_MAXLEAFSIZE=128;
   int SOLVER_MAX_ITERATE=25;
   int MAX_PRINTABLE_ZINT=10000;
   int MAX_RECURSION_LEVEL=9;
@@ -3848,6 +3849,7 @@ extern "C" void Sleep(unsigned int miliSecond);
   int MAX_COMMON_ALG_EXT_ORDER_SIZE = 64;
 #endif
   int TRY_FU_UPRIME=5;
+  int TRY_FU_UPRIME_MAXLEAFSIZE=128;
   int SOLVER_MAX_ITERATE=25;
   int MAX_PRINTABLE_ZINT=1000000;
   int MAX_RECURSION_LEVEL=100;
@@ -5884,8 +5886,8 @@ NULL,NULL,SW_SHOWNORMAL);
 	return 0;
       }
     }
-    if (kill_thread(contextptr)){
-      kill_thread(false,contextptr);
+    if (kill_thread(contextptr)==1){
+      kill_thread(0,contextptr);
       thread_eval_status(0,contextptr);
       clear_prog_status(contextptr);
       cleanup_context(contextptr);
@@ -5957,8 +5959,8 @@ NULL,NULL,SW_SHOWNORMAL);
 	if (!eval_status)
 	  break;
 	wait_0001(contextptr);
-	if (kill_thread(contextptr)){
-	  kill_thread(false,contextptr);
+	if (kill_thread(contextptr)==1){
+	  kill_thread(0,contextptr);
 	  clear_prog_status(contextptr);
 	  cleanup_context(contextptr);
 #if !defined __MINGW_H && !defined KHICAS && !defined SDL_KHICAS

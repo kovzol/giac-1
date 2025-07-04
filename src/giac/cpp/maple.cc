@@ -1,5 +1,19 @@
 // -*- mode:C++ ; compile-command: "g++-3.4 -I.. -I../include -g -c maple.cc  -DIN_GIAC -DHAVE_CONFIG_H" -*-
 #include "giacPCH.h"
+
+#if defined(VISUALC) || defined(__MINGW_H) || defined (FIR) || defined(FXCG) || defined(NSPIRE) || defined(__ANDROID__) || defined(NSPIRE_NEWLIB) || defined(EMCC) || defined (EMCC2) || defined(GIAC_GGB) || defined KHICAS || defined SDL_KHICAS
+#else
+#define THREAD_TIMEOUT
+#endif
+#ifdef THREAD_TIMEOUT
+#include <chrono>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <tuple>
+#include <ctime>
+#endif
+
 /*
  *  Copyright (C) 2000,2014 B. Parisse, Institut Fourier, 38402 St Martin d'Heres
  *
@@ -185,8 +199,11 @@ extern "C" double emcctime(){ // requires UI.Datestart to be initialized with Da
     })-datestart;
 #else
   res=EM_ASM_DOUBLE_V({
-      var hw=Date.now()-UI.Datestart;
-      return hw;
+      if (typeof(UI)!=="undefined"){          
+        var hw=Date.now()-UI.Datestart;
+        return hw;
+      }
+      else return Date.now();
     });
 #endif
   return res;
@@ -650,6 +667,7 @@ namespace giac {
       return emcctime()/1e6; // should be 1e3 if using Date.now()
 #endif
 #endif
+      return CLOCK()*1e-6;
       return total_time(contextptr);
     }
     double delta;
@@ -792,11 +810,105 @@ namespace giac {
     return (delta/ntimes);
 #endif
   }
+
+#ifdef THREAD_TIMEOUT
+  struct timeout_t {
+    gen * g;
+    const context * contextptr;
+    condition_variable * cv;
+  };
+
+  gen deep_freecopy(const gen & g){
+    if (g.type==_VECT){
+      vecteur v(*g._VECTptr);
+      for (int i=0;i<v.size();++i)
+        v[i]=deep_freecopy(v[i]);
+      return gen(v,g.subtype);
+    }
+    if (g.type!=_SYMB)
+      return g;
+    return symbolic(g._SYMBptr->sommet,deep_freecopy(g._SYMBptr->feuille));
+  }
+
+  void timeout_f(const timeout_t & T){
+    gen res=*T.g;//deep_freecopy(*T.g);
+    const context * ptr=T.contextptr;
+    context * contextptr=clone_context(ptr);
+    if (contextptr){
+      //cout << "timeout eval " << res << "\n";
+      try {
+        res=eval(res,1,contextptr);
+        *T.g=res;
+      } catch (std::runtime_error & err){
+        *T.g=undef;
+      }
+      //cout << "timeout evaled " << res << "\n";
+      // commented below because I don't want to see the timeout happen while context is copied, as a consequence don't write timeout(f:=...) but f:=timeout(...)
+      //*ptr->globalptr = *contextptr->globalptr;
+      //*ptr->tabptr = *contextptr->tabptr;
+      delete contextptr;
+    }
+    else
+      *T.g=undef;
+  }
+
+  void timeout_F(const timeout_t & T) {
+    COUT << "Timeout thread " << pthread_self() << "\n";
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
+    timeout_f(T);
+    T.cv->notify_one();
+  }
+
+  gen _timeout(const gen & args,GIAC_CONTEXT){
+    if (args.type!=_VECT || args._VECTptr->size()!=2)
+      return gensizeerr(contextptr);
+    gen e=args._VECTptr->front();
+    gen tout=evalf(args._VECTptr->back(),1,contextptr);
+    if (tout.type!=_DOUBLE_)
+      return gensizeerr(contextptr);
+    std::mutex m;
+    std::condition_variable cv;
+    timeout_t T={&e,contextptr,&cv};
+    std::thread t(timeout_F,T);
+    pthread_t thread=t.native_handle();
+    
+    t.detach();
+    {
+      std::unique_lock<std::mutex> L(m);
+      if (cv.wait_for(L,tout._DOUBLE_val*1s)==std::cv_status::timeout) {
+        // try to stop the thread by setting ctrl_c, but protecting the current thread to be cancelled
+        *logptr(contextptr) << "Timeout, Attempt to stop thread " << thread << "\n";
+        kill_thread(2,contextptr);
+        ctrl_c=interrupted=true;
+        if (cv.wait_for(L,1s)==std::cv_status::timeout) {
+          *logptr(contextptr) << "Current thread " << pthread_self() << ". ";
+          *logptr(contextptr) << "Cancelling thread " << thread << "\n";
+          *logptr(contextptr) << "Result (0 ok): " << pthread_cancel(thread) << "\n";
+        }
+        ctrl_c=interrupted=false;
+        kill_thread(0,contextptr);
+        return string2gen("timeout",false);
+      }
+    }
+    return e;    
+  }
+  static const char _timeout_s []="timeout";
+  static define_unary_function_eval_quoted (__timeout,&_timeout,_timeout_s);
+  define_unary_function_ptr5( at_timeout ,alias_at_timeout,&__timeout,_QUOTE_ARGUMENTS,true);
+#endif // THREAD_TIMEOUT
   
 #endif // KHICAS
   static const char _time_s []="time";
   static define_unary_function_eval_quoted (__time,&_time,_time_s);
   define_unary_function_ptr5( at_time ,alias_at_time,&__time,_QUOTE_ARGUMENTS,true);
+
+  gen _has_i(const gen & g,GIAC_CONTEXT){
+    return has_i(g);
+  }
+  static const char _has_i_s []="has_i";
+  static define_unary_function_eval_quoted (__has_i,&_has_i,_has_i_s);
+  define_unary_function_ptr5( at_has_i ,alias_at_has_i,&__has_i,_QUOTE_ARGUMENTS,true);
 
   static const char _Phi_s []="Phi";
   static define_unary_function_eval (__Phi,&_euler,_Phi_s);

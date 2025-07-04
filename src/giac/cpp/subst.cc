@@ -1290,8 +1290,13 @@ namespace giac {
     for (int i=0;i<s;++i){
       gen gt=quotesubst(g,v[i],t,contextptr);
       gen dg=normal(subst(derive(gt,t,contextptr),t,zero,false,contextptr),contextptr); 
-      if (is_undef(dg))
-	return dg;
+      if (is_undef(dg)){
+#if 1
+	continue;
+#else
+        return exp(g,contextptr); // continue; // return dg;
+#endif
+      }
       gen gdg=g-dg*v[i];
       if (!i)
 	dg=dg/cst_i;
@@ -1960,11 +1965,13 @@ namespace giac {
 
   gen tsimplify_common(const gen & e,GIAC_CONTEXT){
     gen g=pow2expln(e,contextptr);
+    g=hyp2exp(g,contextptr);
     g=gamma2factorial(g,contextptr);
     g=simplifyfactorial(g,contextptr);
     g=simplifypsi(g,contextptr);
     // analyse of args of ln
     g=simplifylnexp(g,contextptr);
+    //g=simplifier(g,contextptr); // so that ln(x+exp(5)) and ln(exp(5)+x) become the same
     vecteur l(lop(g,at_ln));
     int s=int(l.size());
     if (s>1){
@@ -2383,9 +2390,10 @@ namespace giac {
   gen simplify(const gen & e_orig,GIAC_CONTEXT){
     if (e_orig.type<=_POLY || is_inf(e_orig) || has_num_coeff(e_orig))
       return e_orig;
-    if (maybe_set(e_orig))
+    if (e_orig.type==_SYMB && maybe_set(e_orig))
       return set_simplify(e_orig,contextptr);
     gen e=simplifier(e_orig,contextptr);
+    e=hyp2exp(e,contextptr);
     if (algnum_normal(e,contextptr))
       return e;
     if (e.type==_FRAC)
