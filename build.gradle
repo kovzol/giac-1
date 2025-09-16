@@ -143,7 +143,7 @@ def iosClangCompilerArgs(args, sdk, arch, minIosVersion, target) {
     args << "-target"
     args << target
     args << "-miphoneos-version-min=${minIosVersion}"
-    args << "-std=gnu++98"
+    args << "-std=gnu++11"
     args << "-stdlib=libc++"
     args << "-fembed-bitcode"
     args << "-O0"
@@ -297,7 +297,7 @@ def macosCompilerArgs(args, target) {
     args << "-isysroot"
     args << '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk'
     args << '-stdlib=libc++'
-    args << '-lc++'
+    args << '-std=c++11'
     args << '-I/System/Library/Frameworks/CoreFoundation.framework/Headers'
     args << '-I'
     args << file('src/jni/jdkHeaders/darwin').toString()
@@ -406,6 +406,7 @@ model {
                 }
                 linker.withArguments { args ->
                     args << '--target=x86_64-apple-macos11'
+                    args << '-std=c++11'
                 }
             }
             target('osx_arm64') {
@@ -991,7 +992,7 @@ tasks.register('createGiacWasmJs') {
         def wasmBase64 = file("${binaryJsDir}/giacggb.wasm.b64").text
         file("${binaryJsDir}/giac.wasm.js").text = file("${binaryJsDir}/giacggb.js").text
                 .replace('Module', '__ggb__giac').replace('"use asm";', '')
-                .replace('giacggb.wasm', "data:application/octet-stream;base64,${wasmBase64}")
+                .replace('giacggb.wasm', "data:application/wasm;base64,${wasmBase64}")
     }
 }
 

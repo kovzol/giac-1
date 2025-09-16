@@ -110,7 +110,7 @@ if(VCL2)
     set(CMAKE_CXX_FLAGS "-fpermissive -std=c++17 -march=native -O2")
 else()
     set(CMAKE_CXX_STANDARD 11)
-    set(CMAKE_CXX_FLAGS "-fpermissive -std=c++0x -O2")
+    set(CMAKE_CXX_FLAGS "-fpermissive -std=c++0x -O1") # -O2 may cause a crash
 endif(VCL2)
 
 
@@ -261,7 +261,7 @@ set(GIAC_SOURCES
 include_directories(src/giac/headers)
 
 add_definitions(-DHAVE_NO_HOME_DIRECTORY -DGIAC_GGB -DIN_GIAC -DHAVE_LIB_PTHREAD
-        -DGIAC_GENERIC_CONSTANTS -DTIMEOUT
+        -DGIAC_GENERIC_CONSTANTS -DTIMEOUT # -DSIZEOF_VOID_P=8
         -DHAVE_LIBMPFR -DVERSION="1.9.0") # Version number seems hardwired, FIXME.
 
 add_executable(minigiac

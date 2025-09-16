@@ -7550,7 +7550,7 @@ namespace giac {
       size -=offset;
     }
     SHA256_CTX ctx;
-    sha256_init(&ctx);
+    giac_sha256_init(&ctx);
     while (size){
       int rsize=0,Size=size>bufsize?bufsize:size;
       rsize = fread(buf,1,Size,hFile); 
@@ -7559,14 +7559,14 @@ namespace giac {
         free(buf);
         return -3;
       }
-      sha256_update(&ctx,buf,Size);
+      giac_sha256_update(&ctx,buf,Size);
       size -= Size;
     }
     fclose(hFile);
     free(buf);
     std::vector<unsigned char> v(SHA256_BLOCK_SIZE);
     BYTE * hash=&v.front();
-    sha256_final(&ctx,hash);
+    giac_sha256_final(&ctx,hash);
     vecteur V;
     for (int i=0;i<v.size();++i)
       V.push_back(v[i]);
@@ -9488,6 +9488,8 @@ namespace giac {
     if (args.type!=_STRNG)
       return symbolic(at_read,args);
     string fichier=*args._STRNGptr;
+    if (fichier.size()>2 && fichier[0]=='.' && fichier[1]=='/')
+      return quote_read(string2gen(fichier.substr(2,fichier.size()-2),false),contextptr);
 #ifdef KHICAS
     const char * s=read_file(fichier.c_str());
     if (!s)
@@ -9506,6 +9508,23 @@ namespace giac {
 #ifdef NSPIRE
     file inf(fichier.c_str(),"r");
 #else
+    const char * ptr=fichier.c_str(); // N.B. lexer/parser added a space before ..
+#ifndef HAVE_NO_CWD
+    if (ptr[0]==' ' && ptr[1]=='.' && ptr[2]=='.' && ptr[3]=='/'){
+      string cur=getcwd(0,0);
+      ++ptr;
+      while (ptr[0]=='.' && ptr[1]=='.' && ptr[2]=='/'){
+        ptr += 3;
+        for (int i=cur.size()-1;i>=0;--i){
+          if (cur[i]=='/'){
+            cur=cur.substr(0,i);
+            break;
+          }
+        }
+      }
+      fichier=cur+"/"+ptr;
+    }
+#endif
     ifstream inf(fichier.c_str());
 #endif
     if (!inf)
@@ -9585,6 +9604,8 @@ namespace giac {
       return gensizeerr("Exam mode");
 #endif
 #endif
+    if (debug_infolevel)
+      CERR << "read: " << args << "\n";
     if ( args.type==_STRNG &&  args.subtype==-1) return  args;
     size_t addr;
     if (is_address(args,addr))

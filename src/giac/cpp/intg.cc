@@ -1012,6 +1012,48 @@ namespace giac {
 	// check polynomial
 	const vecteur vx2=lvarxpow(coeff,gen_x);
 	bool coeffnotpoly=(vx2.size()>1) || ( (!vx2.empty()) && (vx2.front()!=gen_x));
+        if (coeffnotpoly && imaxb==0 && rea!=0){ // detect ugamma
+          gen chkugamma;
+          if (vx2.size()==2 && vx2.front()==gen_x)
+            chkugamma=vx2.back();
+          else if (vx2.size()==1)
+            chkugamma=vx2.front();
+          if (chkugamma.is_symb_of_sommet(at_pow)){
+            gen chkf=chkugamma._SYMBptr->feuille,chka,chkb;
+            if (chkf.type==_VECT && chkf._VECTptr->size()==2 && chkf._VECTptr->back().type!=_INT_ && is_constant_wrt(chkf._VECTptr->back(),gen_x,contextptr) && is_linear_wrt(chkf._VECTptr->front(),gen_x,chka,chkb,contextptr) && is_zero(chkb)){
+              gen chkn=chkf._VECTptr->back();
+              // chkugamm=(chka*gen_x)^chkn
+              vecteur chkv(makevecteur(chkugamma,gen_x));
+              lvar(coeff,chkv);
+              gen num=sym2r(coeff,chkv,contextptr),deno=1;
+              // should allow a negative power of gen_x with a shift
+              if (num.type==_FRAC){
+                deno=r2sym(num._FRACptr->den,chkv,contextptr);
+                num=num._FRACptr->num;
+              }
+              if (is_constant_wrt(deno,gen_x,contextptr) && num.type==_POLY){
+                gen tmpres,b=-rea;
+                // expand polynomial with respect to first 2 variables 
+                // for each monomial, exp(reb)*chka^(monomial_index[0]*chkn)*monomial_coeff*gen_x^n*exp(rea*gen_x) where n=chkn*monomial_index[0]+monomial_index[1]
+                // b=-rea
+                // -> exp(reb)*chka^n*monomial_coeff*igamma(n+1,b*gen_x)/b^(n+1)
+                vector< monomial<gen> >::const_iterator it=num._POLYptr->coord.begin(),itend=num._POLYptr->coord.end();
+                for (;it!=itend;++it){
+                  polynome tmp(num._POLYptr->dim);
+                  index_t index(it->index.iref());
+                  int i0(index[0]),i1(index[1]);
+                  gen n=i0*chkn+i1;
+                  index[0]=index[1]=0;
+                  tmp.coord.push_back(monomial<gen>(it->value,index));
+                  gen tmpadd = r2sym(tmp,chkv,contextptr)*pow(chka,i0*chkn,contextptr)/pow(b,n+1,contextptr)*_lower_incomplete_gamma(makesequence(n+1,b*gen_x),contextptr);
+                  tmpres += tmpadd;
+                }
+                res += exp(reb,contextptr)*tmpres;
+                continue;
+              }
+            }
+          }
+        }
 	gen imc;
 	bool quad=imaxb.type==_SYMB && is_quadratic_wrt(imaxb._SYMBptr->feuille,gen_x,ima,imb,imc,contextptr);
 	if (!coeffnotpoly && quad && !is_zero(ima) && angle_radian(contextptr)){
@@ -3139,10 +3181,43 @@ namespace giac {
 	}
 	continue;
       }
+      // tmprem==0 *vt has a closed form antiderivative
       if (!est_puissance){
 	vecteur vv(v);
 	vv.erase(vv.begin()+i,vv.begin()+i+1);
 	fu=symbolic(at_prod,gen(vv,_SEQ__VECT));
+        // try integration by part if u is simple and fu polynomial
+        if (rvar.size()>1 && !is_zero(_is_polynomial(makesequence(fu,gen_x),contextptr))){
+          vecteur vu; rlvarx(u,gen_x,vu);
+          int ok=0;
+          for (;ok<vu.size();++ok){
+            gen cur=vu[ok];
+            if (cur.type!=_SYMB)
+              continue;
+#ifdef EMCC
+            vector<unary_function_ptr> auth;
+            auth.push_back(*at_exp);
+            auth.push_back(*at_pow);
+            auth.push_back(*at_sin);
+            auth.push_back(*at_cos);
+            auth.push_back(*at_tan);
+            auth.push_back(*at_sinh);
+            auth.push_back(*at_cosh);
+            auth.push_back(*at_tanh);
+#else
+            vector<unary_function_ptr> auth={*at_exp,*at_pow,*at_sin,*at_cos,*at_tan,*at_sinh,*at_cosh,*at_tanh};
+#endif
+            if (!equalposcomp(auth,cur._SYMBptr->sommet))
+              break;
+          }
+          if (ok==vu.size()){
+            *logptr(contextptr) << "Trying integration by part\n";
+            // integrate(fu*u')=[fu*u]-integrate(fu'*u)
+            gen res=integrate_id_rem(derive(fu,gen_x,contextptr)*u,gen_x,remains_to_integrate,contextptr,intmode);
+            if (is_zero(remains_to_integrate))
+              return fu*u-res;
+          }
+        }
       }
       gen cst=extract_cst(u,gen_x,contextptr);
       bool recur=rvarsize>2 && gen_x.type==_IDNT && strcmp(gen_x._IDNTptr->id_name,"t_nostep")==0 && u.is_symb_of_sommet(at_pow); // workaround for some stupid integrals like integrate(sin((d*x + c)^(2/3)*b + a)/(f*x + E),x);
