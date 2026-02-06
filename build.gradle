@@ -217,7 +217,7 @@ def giacSpecificSettings(cppCompiler, linker, targetPlatform) {
     }
 
     if (targetPlatform.operatingSystem.name == 'linux') {
-        if (targetPlatform.architecture.name == 'arm-v7') {
+        if (targetPlatform.architecture.name == 'arm-v7' || targetPlatform.architecture.name == 'aarch64') {
             cppCompiler.define 'HAVE_GETTEXT'
             linker.args '-lstdc++'
         } else {
@@ -336,6 +336,10 @@ model {
             architecture 'arm'
             operatingSystem 'linux'
         }
+        rpi64 {
+            architecture 'aarch64'
+            operatingSystem 'linux'
+        }
         osx_amd64 {
             architecture 'amd64'
             operatingSystem 'osx'
@@ -391,6 +395,10 @@ model {
         }
         gcc(Gcc) {
             target('rpi') {
+                cppCompiler.executable 'gcc'
+                linker.executable 'gcc'
+            }
+            target('rpi64') {
                 cppCompiler.executable 'gcc'
                 linker.executable 'gcc'
             }
@@ -494,6 +502,7 @@ model {
                 targetPlatform 'osx_arm64'
             }
             targetPlatform 'rpi'
+            targetPlatform 'rpi64'
 
             binaries.all {
                 giacCommonDefines(cppCompiler)
@@ -567,6 +576,7 @@ model {
             targetPlatform 'androidx86_64'
             targetPlatform 'androidarm64'
             targetPlatform 'rpi'
+            targetPlatform 'rpi64'
 
             sources.cpp {
                 source {

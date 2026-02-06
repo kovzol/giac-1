@@ -42,8 +42,24 @@ project(minigiac)
 
 option(VCL2 "Use vectorclass version 2 to speed up some heavy computations" OFF)
 
-if(UNIX AND NOT APPLE)
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64" AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    message(STATUS "64-bit Raspberry Pi detected (aarch64)")
+    set(PI64 TRUE)
+else()
+    set(PI64 FALSE)
+endif()
+
+if(CMAKE_SYSTEM_PROCESSOR STREQUAL "armvl7" AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+    message(STATUS "32-bit Raspberry Pi detected (armv7)")
+    set(PI32 TRUE)
+else()
+    set(PI32 FALSE)
+endif()
+
+if(UNIX AND NOT APPLE AND NOT PI64 AND NOT PI32)
     set(LINUX TRUE)
+else()
+    set(LINUX FALSE)
 endif()
 
 # Detection of gmp/mpfr could be done via find_package, but this
@@ -82,6 +98,18 @@ if(LINUX)
     message(STATUS "Using prebuilt gmp/mpfr (Linux)")
     find_static_library(gmp GMP_STATIC ${PREBUILT_DIR}/linux/x86-64/)
     find_static_library(mpfr MPFR_STATIC ${PREBUILT_DIR}/linux/x86-64/)
+endif()
+
+if(PI64)
+    message(STATUS "Using prebuilt gmp/mpfr (aarch64)")
+    find_static_library(gmp GMP_STATIC ${PREBUILT_DIR}/linux/aarch64/)
+    find_static_library(mpfr MPFR_STATIC ${PREBUILT_DIR}/linux/aarch64/)
+endif()
+
+if(PI32)
+    message(STATUS "Using prebuilt gmp/mpfr (armv7l)")
+    find_static_library(gmp GMP_STATIC ${PREBUILT_DIR}/linux/arm-v7/)
+    find_static_library(mpfr MPFR_STATIC ${PREBUILT_DIR}/linux/arm-v7/)
 endif()
 
 if(APPLE)
@@ -308,7 +336,7 @@ if(UNIX)
     add_definitions(-DHAVE_SYS_TIMES_H -DHAVE_UNISTD_H -DHAVE_SYS_TIME_H -DHAVE_SYSCONF)
 endif()
 
-if(LINUX)
+if(LINUX OR PI64 OR PI32)
     target_include_directories(javagiac PUBLIC
         ${CMAKE_SOURCE_DIR}/src/jni/jdkHeaders/linux)
     target_link_options(javagiac PRIVATE -static-libgcc -static-libstdc++)
