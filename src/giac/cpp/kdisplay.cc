@@ -54,7 +54,10 @@ int shell_x=0,shell_y=0,shell_fontw=12,shell_fonth=18;
 #define _green _GREEN
 #define _red _RED
 #define dbgprintf(...) 
-#endif 
+#endif
+
+
+
 // pour le mode examen cx2, il y a 2 endroits ou is_cx2 est utilise dans smallmenu.selection==1
 // soit par extinction des leds (marche avec OS 5.2)
 // soit comme sur la CX si l'ecriture en flash NAND marche un jour
@@ -76,8 +79,21 @@ extern "C" void console_log(const char *){}
 #include "qrcodegen.h"
 
 #ifdef NUMWORKS
+#ifdef TLSF
+extern "C" unsigned tlsf_avail(); // memory available
+#endif
 #if !defined NUMWORKS_SLOTB // || defined SDL_KHICAS || defined SIMU
 #define QRHELP
+#endif
+
+#if defined NUMWORKS && defined DEVICE
+unsigned ram_avail(){
+#ifdef TLSF
+  return tlsf_avail();
+#else
+  return _heap_size-((int)_heap_ptr-(int)_heap_base);
+#endif
+}
 #endif
 
 #if defined NUMWORKS_SLOTB || defined NUMWORKS_SLOTAB
@@ -123,7 +139,11 @@ extern "C" int flash_filebrowser(const char ** filenames,int maxrecords,const ch
   return tar_filebrowser(flash_buf,filenames,maxrecords,extension);
 }
 #else
+#ifdef NUMWORKS_SLOTAB
+const char * flash_buf=(const char *)0x90400000;
+#else
 const char * flash_buf=(const char *)0x90200000;
+#endif
 #endif
 
 #else // NUMWORKS
@@ -5373,8 +5393,12 @@ string longhelp(const char * s){
     smallmenu.scrollout=1;
     string vars="Variables";
 #if defined NUMWORKS && defined DEVICE
+#ifdef TLSF
+    vars += ", free = ";
+#else
     vars += ", free >= ";
-    vars += print_INT_(_heap_size-((int)_heap_ptr-(int)_heap_base));
+#endif
+    vars += print_INT_(ram_avail());
 #endif
     smallmenu.title = (char*) vars.c_str();
     //MsgBoxPush(5);
@@ -5738,7 +5762,7 @@ string longhelp(const char * s){
     if (v.size()<v.capacity())
       return true;
     int l=2*v.size();
-    if (1024+l*sizeof(logo_turtle)<_heap_size-((int)_heap_ptr-(int)_heap_base))
+    if (1024+l*sizeof(logo_turtle)<ram_avail())
       return true;
     ctrl_c=interrupted=true;
     return false;
@@ -13241,7 +13265,7 @@ namespace xcas {
               gen m=evalf_double(G1y/G1x,1,contextptr);
               if (m.type==_DOUBLE_)
                 tracemode_add += ", m="+print_DOUBLE_(m._DOUBLE_val,3);
-              gen T(_vector(makesequence(_point(G,contextptr),_point(G+G1t,contextptr)),contextptr));
+              gen T(_vector(makesequence(_point(G,contextptr),_point(G+G1t,contextptr),symb_equal(at_display,_BLUE)),contextptr));
               tracemode_disp.push_back(T);
               gen G2(derive(G1,t,contextptr));
               gen G2t=subst(G2,t,curt,false,contextptr);
@@ -13251,13 +13275,13 @@ namespace xcas {
               gen R=evalf_double(Tn*Tn*Tn/det,1,contextptr);
               gen centre=G+R*(-G1y+cst_i*G1x)/Tn;
               if (tracemode & 4){
-                gen N(_vector(makesequence(_point(G,contextptr),_point(centre,contextptr)),contextptr));
+                gen N(_vector(makesequence(_point(G,contextptr),_point(centre,contextptr),symb_equal(at_display,_BLUE)),contextptr));
                 tracemode_disp.push_back(N);
               }
               if (tracemode & 8){
                 if (R.type==_DOUBLE_)
                   tracemode_add += ", R="+print_DOUBLE_(R._DOUBLE_val,3);
-                tracemode_disp.push_back(_cercle(makesequence(centre,R),contextptr));
+                tracemode_disp.push_back(_cercle(makesequence(centre,R,symb_equal(at_display,_BLUE)),contextptr));
               }
             }
           }
@@ -20692,6 +20716,13 @@ static void do_QRdisp(const uint8_t qrcode[],const char * msg) {
 }
 
 bool QRdisp(const char * text,const char *msg){
+#if defined EMCC || defined EMCC2 //|| defined KHICAS || defined SDL_KHICAS
+  EM_ASM({
+      var value = UTF8ToString($0);
+      console.log(value);
+      navigator.clipboard.writeText(value);
+    },text);
+#endif
   // confirm("qrdisp",text);
   enum qrcodegen_Ecc errCorLvl = qrcodegen_Ecc_LOW;  // Error correction level
   
@@ -20704,7 +20735,7 @@ bool QRdisp(const char * text,const char *msg){
     while (1) {
       do_QRdisp(qrcode,msg);
       int key; ck_getkey(&key);
-      if (key==KEY_CTRL_OK || key==KEY_CTRL_EXIT)
+      if (key==KEY_CTRL_OK || key==KEY_CTRL_EXIT || key==KEY_CTRL_MENU)
 	break;
     }
   }
@@ -22143,6 +22174,15 @@ void numworks_certify_internal(){
     console_log("restore session");
     // cout << "0" << fname << "\n"; Console_Disp(1); GetKey(&key);
     string filename(fname); //filename="mandel.py.tns";
+#ifdef NUMWORKS
+    if (filename=="session"){
+      if (file_exists("session.xw"))
+	filename = "session.xw";
+      else
+	filename = "session_xw.py";
+      goto label_load;
+    }
+#endif
     if (filename.size()>4 && filename.substr(filename.size()-4,4)==".tns")
       filename=filename.substr(0,filename.size()-4);
     if (filename.size()>3 && filename.substr(filename.size()-3,3)==".py"){
@@ -22171,6 +22211,8 @@ void numworks_certify_internal(){
         filename += ".py";
     }
 #endif
+  label_load:
+    console_log(("effective session "+filename).c_str());
     if (!load_console_state_smem(filename.c_str(),contextptr)){
       int x=0,y=0;
       PrintMini7(x,y,"KhiCAS 1.9 (c) 2024 B. Parisse",TEXT_MODE_NORMAL, COLOR_BLACK, COLOR_WHITE,false);
@@ -22236,6 +22278,11 @@ void numworks_certify_internal(){
       console_log("restore session 4");
       //menu_about();
       return 0;
+    } else {
+#ifdef UPSILON
+      if (filename=="session.xw")
+	erase_file(filename.c_str());
+#endif
     }
     return 1;
   }

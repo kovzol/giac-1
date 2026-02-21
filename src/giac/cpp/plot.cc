@@ -32,6 +32,7 @@
  */
 
 #include "giacPCH.h"
+#include "modpoly.h"
 
 using namespace std;
 #if !defined NSPIRE && !defined FXCG && !defined KHICAS 
@@ -1422,6 +1423,69 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     return true;
   }
 
+  // return true if e=a*x+b
+  bool fast_is_linear_wrt(const gen & e,const gen &x,gen & a,gen & b,GIAC_CONTEXT){
+    a=b=0;
+    if (e.type!=_SYMB){
+      if (e.type==_VECT){
+        const vecteur & v=*e._VECTptr;
+        vecteur A,B;
+        for (int i=0;i<v.size();++i){
+          if (!fast_is_linear_wrt(v[i],x,a,b,contextptr))
+            return false;
+          A.push_back(a);
+          B.push_back(b);
+        }
+        a=gen(A,e.subtype); b=gen(B,e.subtype);
+        return true;
+      }
+      if (e==x){
+        a=1; return true;
+      }
+      b=e; return true;
+    }
+    gen f=e._SYMBptr->feuille,ai,bi;
+    if (e._SYMBptr->sommet==at_neg){
+      if (!fast_is_linear_wrt(f,x,a,b,contextptr))
+        return false;
+      a=-a; b=-b;
+      return true;
+    }
+    if (e._SYMBptr->sommet==at_plus && f.type==_VECT){
+      const vecteur & v =*f._VECTptr;
+      for (int i=0;i<v.size();++i){
+        if (!fast_is_linear_wrt(v[i],x,ai,bi,contextptr))
+          return false;
+        a+=ai;
+        b+=bi;
+      }
+      return true;
+    }
+    if (e._SYMBptr->sommet==at_prod && f.type==_VECT){
+      const vecteur & v =*f._VECTptr; b=1;
+      for (int i=0;i<v.size();++i){
+        if (!fast_is_linear_wrt(v[i],x,ai,bi,contextptr))
+          return false;
+        if (a==0){
+          a=b*ai;
+          b=b*bi;
+          continue;
+        }
+        if (ai!=0)
+          return false;
+        a=a*bi;
+        b=b*bi;        
+      }
+      return true;
+    }
+    if (!fast_is_linear_wrt(f,x,a,b,contextptr))
+      return false;
+    if (a!=0*a)
+      return false;
+    b=e;
+    return true;
+  }
+
   gen plotfunc(const gen & f_,const gen & vars,const vecteur & attributs,int densityplot,double function_xmin,double function_xmax,double function_ymin,double function_ymax,double function_zmin, double function_zmax,int nstep,int jstep,bool showeq,const context * contextptr){
     int pal=-1;
     if (!attributs.empty() && attributs[0].type==_INT_){
@@ -1480,8 +1544,8 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     }
 #ifndef GNUWINCE
     if (vars.type==_IDNT){ // function plot
-      gen a,b;
-      if (taille(f,100)<=100 && lop(f,at_floor).empty() && is_linear_wrt(f,vars,a,b,contextptr))	
+      gen a,b; int tf=taille(f,100);
+      if (tf<=100 && lop(f,at_floor).empty() && fast_is_linear_wrt(f,vars,a,b,contextptr))	
 	return put_attributs(_segment(makesequence(function_xmin+cst_i*(a*gen(function_xmin)+b),function_xmax+cst_i*(a*gen(function_xmax)+b)),contextptr),attributs,contextptr); // replace segment by droite so that legend=... works?
       vecteur lpiece(lop(f,at_piecewise));
       if (!lpiece.empty()) lpiece=lvarx(lpiece,vars);
@@ -7004,6 +7068,56 @@ static vecteur densityscale(double xmin,double xmax,double ymin,double ymax,doub
     vecteur attributs(1,default_color(contextptr));
     vecteur v(seq2vecteur(args));
     gen g;
+    if (v.size()==2 && v.back().type==_INT_){
+      int n=v.back().val,dim=0;
+      g=v.front();
+      if (g.type==_VECT && g._VECTptr->size()==2){
+        if (g._VECTptr->back().type!=_INT_)
+          return gentypeerr(contextptr);
+        dim=g._VECTptr->back().val;
+        if (dim<1)
+          return gendimerr(contextptr);
+        g=g._VECTptr->front();
+      }
+      if (g.type==_MOD){
+        gen pg=*(g._MODptr+1);
+        if (pg.type!=_INT_)
+          return gentypeerr(contextptr);
+        int p=pg.val;
+        if (!dim) return makemod(n%p,p);
+        vecteur res; res.reserve(dim);
+        for (int i=0;i<dim;++i){
+          res.push_back(makemod(n%p,p));
+          n/=p;
+        }
+        return res;
+      }
+#ifndef NO_RTTI
+      if (g.type==_USER){
+        if (galois_field * ptr=dynamic_cast<galois_field *>(g._USERptr)){
+          gen pg=ptr->p;
+          gen P=char2_uncoerce(ptr->P);
+          if (pg.type==_INT_ && P.type==_VECT && !P._VECTptr->empty()){
+            int p=pg.val;
+            int d=P._VECTptr->size()-1;
+            int J=dim; if (J==0) J=1;
+            vecteur res(J);
+            for (int j=0;j<J;++j){
+              vecteur a(d);
+              for (int i=0;i<d;++i){
+                a[i]=n%p;
+                n/=p;
+              }
+              trim_inplace(a);
+              res[j]=galois_field(p,P,ptr->x,a);
+            }
+            return dim?res:res.front();
+          }
+        }
+      }
+#endif
+      
+    }
     int s=read_attributs(v,attributs,contextptr);
     if (!s)
       return gendimerr(contextptr);
@@ -12713,7 +12827,7 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
     if (l<2)
       v.push_back(0);
     expr=v[0];
-    niter=30;
+    niter=10;
     gen x0;
     if (l>3){ // expr,var,x0,niter
       x=v[1];
@@ -12741,7 +12855,6 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
       }
     }
     x0=evalf_double(x0,eval_level(contextptr),contextptr);
-    xmin=gnuplot_xmin;xmax=gnuplot_xmax;
     if (x0.type==_VECT && x0._VECTptr->size()==3){
       vecteur & x0v=*x0._VECTptr;
       if (x0v[1].type!=_DOUBLE_ || x0v[2].type!=_DOUBLE_)
@@ -12750,6 +12863,29 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
       xmax=x0v[2]._DOUBLE_val;
       x0=remove_at_pnt(x0v[0]);
       x0=re(x0,contextptr);
+    }
+    else {
+      double xcur=x0._DOUBLE_val;
+      xmin=xmax=xcur;
+      for (int i=0;i<niter;++i){
+        gen tmp=subst(expr,x,xcur,false,contextptr);
+        if (tmp.type!=_DOUBLE_)
+          break;
+        xcur=tmp._DOUBLE_val;
+        if (xcur<xmin)
+          xmin=xcur;
+        if (xcur>xmax)
+          xmax=xcur;
+      }
+      xcur=xmax-xmin;
+      if (xcur<epsilon(contextptr)){
+        xcur=fabs(xmax)+fabs(xmin);
+        if (xcur<1)
+          xcur=1;
+      }
+      xcur *= 0.1;
+      xmax += xcur;
+      xmin -= xcur;
     }
     if (x0.type!=_DOUBLE_)
       return -4; // 
@@ -13415,7 +13551,7 @@ int find_plotseq_args(const gen & args,gen & expr,gen & x,double & x0d,double & 
 	  continue;
 	}
 	if (visited[icur][jcur]){  
-	  if (0.1*dfxyorig_abs[icur][jcur]*dfxycurrent_abs>fabs(dfxcurrent*dfyorig[icur][jcur]-dfycurrent*dfxorig[icur][jcur])){
+	  if (dfxyorig_abs[icur].size()>jcur && dfyorig[icur].size()>jcur && dfxorig[icur].size()>jcur && 0.1*dfxyorig_abs[icur][jcur]*dfxycurrent_abs>fabs(dfxcurrent*dfyorig[icur][jcur]-dfycurrent*dfxorig[icur][jcur])){
 	    if (count<2)
 	      chemin_ok=false;
 	    else {

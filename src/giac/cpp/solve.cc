@@ -4529,6 +4529,13 @@ namespace giac {
     return(A);
   }
 
+  void warn_invalid_var(const vecteur & x,GIAC_CONTEXT){
+    for (int i=0;i<x.size();++i){
+      if (x[i].is_symb_of_sommet(at_exp) || x[i]==cst_pi)
+        *logptr(contextptr) << "Probably invalid variable " << x[i] << "\n"; 
+    }
+  }
+
   // return -2 invalid, -1 (unknown), 0 (no solution), 1 (solution exist)
   int linsolve_ineq(const vecteur & sl,const vecteur & x,vecteur & sol,GIAC_CONTEXT){
     // first extract equations, recursive solve and substitute
@@ -4569,6 +4576,7 @@ namespace giac {
         g=-g;
       SL.push_back(g);
     }
+    warn_invalid_var(x,contextptr);
     matrice A=sxa(SL,x,contextptr);
     int n=x.size();
     // if x is n-dimensional, search n independant inequalities
@@ -7819,6 +7827,7 @@ namespace giac {
   define_unary_function_ptr5( at_rur_separate_max_tries ,alias_at_rur_separate_max_tries ,&__rur_separate_max_tries,0,true);
 
   vecteur gsolve(const vecteur & eq_orig,const vecteur & var_orig,bool complexmode,int evalf_after,GIAC_CONTEXT){
+    warn_invalid_var(var_orig,contextptr);
     // replace variables in var_orig by true identificators
     vecteur var(var_orig);
     if (!lop(eq_orig,*at_unit).empty())
@@ -9579,7 +9588,7 @@ namespace giac {
 	      }
 	    }
 	    elim.erase(elim.begin()+j);
-	    gen res=_eliminate(makesequence(eqs,elim,symb_equal(at_irem,modular),symb_equal(at_eliminate,gbasis_param.eliminate_flag)),contextptr);
+	    gen res=_eliminate(makesequence(eqs,elim,remainvars,symb_equal(at_irem,modular),symb_equal(at_eliminate,gbasis_param.eliminate_flag)),contextptr);
 	    // additional check for 
 	    // eliminate([v49+-1*v49*v48+-1*v47+v50*v47,-1*v49+-1*v49*v48+v47+v50*v47,v59+-1*v55,v60+-1*v56,2*v63+-1*v59,-1+v50,v48,-1+2*v64+-1*v60,-4*v56+v55^2,-1*v47,-1*v49],revlist([v47,v48,v49,v50,v55,v56,v59,v60]));
 	    // eliminate([-2+2*v7+-1*v5,-4+2*v8+-1*v6,4*v6+-1*v6^2+2*v5+-1*v5^2,-4*v6+v6^2+-2*v5+v5^2],revlist([v5,v6]));

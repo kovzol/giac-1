@@ -78,6 +78,27 @@ const char * mp_hal_input(const char * prompt) ;
 namespace giac {
 #endif // ndef NO_NAMESPACE_GIAC
 
+  gen _enumerate(const gen & g,GIAC_CONTEXT){
+    if (g.type!=_VECT)
+      return gentypeerr(contextptr);
+    gen gv(g),start(0);
+    if (g.subtype==_SEQ__VECT && g._VECTptr->size()==2){
+      start=g._VECTptr->back();
+      gv=g._VECTptr->front();
+      if (gv.type!=_VECT)
+        return gentypeerr(contextptr);
+    }
+    const vecteur & v =*gv._VECTptr;
+    vecteur res; res.reserve(v.size());
+    for (int i=0;i<v.size();++i){
+      res.push_back(makevecteur(start+i,v[i]));
+    }
+    return res;
+  }
+  static const char _enumerate_s []="enumerate";
+  static define_unary_function_eval (__enumerate,&_enumerate,_enumerate_s);
+  define_unary_function_ptr5( at_enumerate ,alias_at_enumerate,&__enumerate,0,true);
+
   gen _scalar_product(const gen & args,GIAC_CONTEXT){
     if ( args.type==_STRNG && args.subtype==-1) return  args;
     if (args.type!=_VECT || args._VECTptr->size()!=2)
@@ -2856,12 +2877,16 @@ namespace giac {
     if (s==2)
       x=v[1];
     gen f(_e2r(gen(makevecteur(v[0],x),_SEQ__VECT),contextptr));
-    gen deno(1);
+    gen deno(1);int shift=0;
     if (f.type==_FRAC){
       deno=f._FRACptr->den;
+      if (deno.type==_VECT){
+        shift=deno._VECTptr->size()-1;
+        deno=deno._VECTptr->front();
+      }
       f=f._FRACptr->num;
     }
-    if (f.type!=_VECT){
+    if (f.type!=_VECT && shift==0){
       switch(service){
       case -1:
 	return makevecteur(f)/deno;
@@ -2878,6 +2903,7 @@ namespace giac {
 	  return f;
       }
     }
+    f=gen2vecteur(f);
     switch (service){
     case -1:
       return f/deno;
@@ -2890,8 +2916,8 @@ namespace giac {
       return _icontent(makesequence(f,lvar(f)),contextptr)/(is_integer(deno)?deno:plus_one);
     }
     vecteur & w=*f._VECTptr;
-    int ss=int(w.size());
-    if (service>=ss)
+    int ss=int(w.size())-shift;
+    if (service>=ss || ss-service-1<0)
       return zero;
     return w[ss-service-1]/deno;
   }
@@ -2943,8 +2969,26 @@ namespace giac {
 	return undef;
       }
       is_integral(v.back());
-      if (v.back().val<0)
+      if (v.back().val<0){
+        if (v.size()==2 || v.size()==3){
+          int n=v.back().val;
+          v.pop_back();
+          gen D=_denom(v.front(),contextptr);
+          gen N=ratnormal(D*v.front(),contextptr);
+          gen x(vx_var);
+          if (v.size()==2)
+            x=v[1];
+          gen deg=_degree(makesequence(D,x),contextptr);
+          if (deg.type==_INT_){
+            int shift=deg.val;
+            if (shift+n>=0){
+              gen DD=_lcoeff(makesequence(D,x),contextptr);
+              return ratnormal(_coeff(makesequence(N,x,shift+n),contextptr)/DD,contextptr);
+            }
+          }
+        }
 	return gendimerr(contextptr);
+      }
       int n=absint(v.back().val);
       v.pop_back();
       if (v.size()==1 && v.front().type==_USER){
@@ -8529,7 +8573,7 @@ static define_unary_function_eval (__os_version,&_os_version,_os_version_s);
     gly.subtype=_INT_PLOT;
     gly=symb_equal(gly,symb_interval(ymin-yscale/2,ymax+yscale/2));
     poi.insert(poi.begin(),gly);
-    gprintf(gettext("Variations (%gen,%gen)\n%gen"),makevecteur(f,g,tvi),1,contextptr);
+    gprintf(-1,gettext("Variations (%gen,%gen)\n%gen"),makevecteur(f,g,tvi),1,contextptr);
 #if !defined(EMCC) && !defined(EMCC2)
     if (printtvi && step_infolevel(contextptr)==0)
       *logptr(contextptr) << tvi << '\n';
@@ -9075,7 +9119,7 @@ static define_unary_function_eval (__os_version,&_os_version,_os_version_s);
     gly.subtype=_INT_PLOT;
     gly=symb_equal(gly,symb_interval(ymin-yscale/2,ymax+yscale/2));
     poi.insert(poi.begin(),gly);
-    gprintf(gettext(do_inflex_tabsign==2?"Sign %gen\n%gen":"Variations %gen\n%gen"),makevecteur(f,tvi),1,contextptr);
+    gprintf(-1,gettext(do_inflex_tabsign==2?"Sign %gen\n%gen":"Variations %gen\n%gen"),makevecteur(f,tvi),1,contextptr);
 #if !defined(EMCC) && !defined(EMCC2)
     if (printtvi && step_infolevel(contextptr)==0)
       *logptr(contextptr) << tvi << '\n';
@@ -10367,7 +10411,7 @@ void sync_screen(){}
     if (v[0].type!=_STRNG || !is_integral(v[1]) || !is_integral(v[2]))
       return gensizeerr(contextptr);
     gen s=v[0];
-#if defined KHICAS || defined GIAC_HAS_STO_38
+#if defined KHICAS  || defined SDL_KHICAS || defined GIAC_HAS_STO_38
     os_draw_string(v[1].val,v[2].val,v.size()>3?remove_at_display(v[3],contextptr).val:_BLACK,v.size()>4?remove_at_display(v[4],contextptr).val:_WHITE,s._STRNGptr->c_str()
 #ifdef GIAC_HAS_STO_38
                    ,false
@@ -11017,6 +11061,7 @@ void sync_screen(){}
   static const char _mkdir_s []="mkdir";
   static define_unary_function_eval (__mkdir,&_locate,_mkdir_s);
   define_unary_function_ptr5( at_mkdir ,alias_at_mkdir,&__mkdir,0,true);
+
   
 #endif // UNISTD
 
