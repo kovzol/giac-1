@@ -1363,7 +1363,8 @@ namespace giac {
 	return "\\sqrt{"+gen2tex(v.front(),contextptr)+"}";
       if ( v.back()==minus_one_half || v.back()==fraction(minus_one,plus_two) )
 	return "\\frac{1}{\\sqrt{"+gen2tex(v.front(),contextptr)+"}}";
-      if (v.front().type==_SYMB && v.front()._SYMBptr->sommet!=at_exp && equalposcomp(primitive_tab_op,v.front()._SYMBptr->sommet)){
+      // not active anymore because mathlive does not parse correctly
+      if (0 && v.front().type==_SYMB && v.front()._SYMBptr->sommet!=at_exp && equalposcomp(primitive_tab_op,v.front()._SYMBptr->sommet)){
         string res=string("\\")+v.front()._SYMBptr->sommet.ptr()->s+"\\^{";
         res += gen2tex(v.back(),contextptr);
         res += "}";
@@ -1392,10 +1393,11 @@ namespace giac {
       return res+"^{"+gen2tex(v.back(),contextptr)+'}';
     }
     s = opstring +"\\left(";
+    s += begin_VECT_string(feu.subtype,true,contextptr);
     for (int i=0;;++i){
       s += gen2tex((*(feu._VECTptr))[i],contextptr);
       if (i==l-1)
-	return s+"\\right)";
+	return s+end_VECT_string(feu.subtype,true,contextptr)+"\\right)";
       s += ',';
     }
   }
@@ -1409,9 +1411,16 @@ namespace giac {
       return s;
 #endif
     switch (e.type){
-    case _INT_: case _ZINT: case _REAL:
+    case _INT_: 
       if (e.subtype==_INT_BOOLEAN)
-	return "\\mbox{"+e.print(contextptr)+'}';      
+	return "\\mbox{"+e.print(contextptr)+'}';
+      {
+        string tmp=e.print(contextptr);
+        if (tmp[0]>='0' && tmp[0]<='9')
+          return tmp;
+        return "\\mathrm{"+tmp+'}';
+      }
+    case _ZINT: case _REAL:      
       return e.print(contextptr);
     case _DOUBLE_:
       if (specialtexprint_double(contextptr))
@@ -1429,7 +1438,7 @@ namespace giac {
 	return spread2tex(*e._VECTptr,1,contextptr);
       if (!e._VECTptr->empty() && e._VECTptr->back().is_symb_of_sommet(at_pnt) && !is3d(e._VECTptr->back()) )
 	return vectpnt2tex(e,contextptr);
-      if (ckmatrix(*e._VECTptr))
+      if (e.subtype!=_SEQ__VECT && ckmatrix(*e._VECTptr))
 	return matrix2tex(*e._VECTptr,contextptr);
       else
 	return _VECT2tex(*e._VECTptr,e.subtype,contextptr);
@@ -1444,7 +1453,7 @@ namespace giac {
     case _STRNG:
       return idnt2tex(*e._STRNGptr);
     case _FUNC:
-      return idnt2tex(e.print(contextptr));
+      return idnt2tex(e._FUNCptr->ptr()->print(contextptr));// idnt2tex(e.print(contextptr));
     case _USER:
       return e._USERptr->texprint(contextptr);
     case _MOD:
