@@ -68,17 +68,19 @@ extern "C" {
 #include "sparse.h"
 #include "quater.h"
 #include "giacintl.h"
+
 #ifndef GIAC_GGB
 #ifdef KHICAS
 void sha256_init(SHA256_CTX *ctx);
 void sha256_update(SHA256_CTX *ctx, const BYTE data[], size_t len);
 void sha256_final(SHA256_CTX *ctx, BYTE hash[]);
 #else
-#ifndef EMCC2
+#if !defined EMCC2 && !defined USE_GMP_REPLACEMENTS 
 #include "sha256.h"
 #endif
 #endif
 #endif
+
 #if defined GIAC_HAS_STO_38 || defined NSPIRE || defined NSPIRE_NEWLIB || defined FXCG || defined GIAC_GGB || defined USE_GMP_REPLACEMENTS || defined KHICAS || defined SDL_KHICAS
 #else
 #include "signalprocessing.h"
@@ -7470,7 +7472,7 @@ namespace giac {
   static define_unary_function_eval (__cd,&_cd,_cd_s);
   define_unary_function_ptr5( at_cd ,alias_at_cd,&__cd,0,true);
 
-#if !defined GIAC_GGB && !defined NUMWORKS && !defined EMCC2
+#if !defined GIAC_GGB && !defined NUMWORKS && !defined EMCC2 && !defined USE_GMP_REPLACEMENTS 
   // unix command sha256sum
   gen _sha256(const gen &g_,GIAC_CONTEXT){
     int offset=0;
@@ -9213,7 +9215,7 @@ namespace giac {
 	    return gensizeerr(gettext("Invalid map"));
 	  return res;
 	}
-	if (f==at_table){
+	if (f==at_table || f==at_dict){
 	  g.subtype=0;
 	  return g;
 	}
@@ -9233,7 +9235,7 @@ namespace giac {
 	  g.subtype=_SEQ__VECT;
 	  return g;
 	}
-	if (f==at_table){
+	if (f==at_table || f==at_dict){
 	  const vecteur & m = *g._VECTptr;
 	  // conversion to sparse matrix
 	  gen_map M;
@@ -9989,7 +9991,7 @@ namespace giac {
       }
       args=args._SYMBptr->sommet;
     }
-    string argss=args.print(contextptr);
+    string argss=args.type==_STRNG?*args._STRNGptr:args.print(contextptr);
     // remove space at the end if required
     while (!argss.empty() && argss[argss.size()-1]==' ')
       argss=argss.substr(0,argss.size()-1);

@@ -7,7 +7,7 @@ apply from: '../repositories.gradle'
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(11)
+        languageVersion = JavaLanguageVersion.of(17)
     }
     withSourcesJar()
 }
@@ -15,18 +15,18 @@ java {
 
 dependencies {
     api 'org.gwtproject:gwt-user:2.12.1',
-        'org.treblereel.gwt.gwtproject.resources:gwt-resources-api:202408061',
+        'org.treblereel.gwt.gwtproject.resources:gwt-resources-api:202602114',
         // old version, FIXME
         'com.google.gwt:gwt-dev:2.9.0',
         'com.google.gwt:gwt-user:2.9.0'
-    annotationProcessor 'org.treblereel.gwt.gwtproject.resources:gwt-resources-processor:202402231'
+    annotationProcessor 'org.treblereel.gwt.gwtproject.resources:gwt-resources-processor:202602114'
 }
 
 compileJava.options.sourcepath = files(processResources.destinationDir).builtBy(processResources)
 
 tasks.register("prepareJs", Copy) {
     dependsOn project.getParent().createGiacWasmJs
-    from "${project.getParent().buildDir}/binaries/giacggb.wasm"
+    from "${project.getParent().layout.buildDirectory.get()}/binaries/giacggb.wasm"
     into file("src/main/resources/fr/grenoble/ujf/giac")
     include "giac.wasm.js"
 }
@@ -36,7 +36,7 @@ tasks.sourcesJar {
     from files(file("build/generated/sources/annotationProcessor/java/main/"))
 }
 
-compileJava.dependsOn prepareJs
+processResources.dependsOn prepareJs
 
 publishing {
     publications {

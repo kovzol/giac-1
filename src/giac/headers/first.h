@@ -15,6 +15,9 @@
  *  along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 #ifdef __clang__ // _LIBCPP_VERSION
+#ifdef _LIBCPP_HARDENING_MODE
+#undef _LIBCPP_HARDENING_MODE
+#endif
 #define _LIBCPP_HARDENING_MODE _LIBCPP_HARDENING_MODE_NONE
 #endif
 #undef max
@@ -135,16 +138,7 @@
 #define CLOCK_T int
 #undef HAVE_LIBDL
 #undef HAVE_LIBPTHREAD
-struct Bidon {
-  int i;
-Bidon(int i_=0):i(i_){}
-  flush(){}
-};
-template<class T> Bidon operator << (Bidon ,const T&){ return Bidon(); }
-inline Bidon operator << (Bidon,const char *){return Bidon();}
-// #define CIN 0 //std::cin
-#define COUT Bidon(0) //std::cout
-#define CERR Bidon(0) //std::cout
+#define GIAC_SILENT
 typedef unsigned pid_t;
 extern "C" double lgamma(double);
 #else // FXCG
@@ -179,6 +173,20 @@ extern "C" void glcontext(int);
 #endif // EMCC
 #endif // NSPIRE
 #endif // FXCG
+
+
+#ifdef GIAC_SILENT
+struct Bidon {
+  int i;
+Bidon(int i_=0):i(i_){}
+  flush(){}
+};
+template<class T> Bidon operator << (Bidon ,const T&){ return Bidon(); }
+inline Bidon operator << (Bidon,const char *){return Bidon();}
+// #define CIN 0 //std::cin
+#define COUT Bidon(0) //std::cout
+#define CERR Bidon(0) //std::cout
+#endif
 
 #ifdef __sparc__
 #define DOUBLEVAL
