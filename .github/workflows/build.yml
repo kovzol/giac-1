@@ -114,7 +114,7 @@ jobs:
     - name: build
       run: |
         sed -i '' -e s/'${GMP_STATIC}'/gmp/g -e s/'${MPFR_STATIC}'/mpfr/g CMakeLists.txt
-        mkdir cbuild && cd cbuild && cmake -DCMAKE_CXX_FLAGS="-DDONT_USE_LIBLAPACK" .. && make
+        mkdir cbuild && cd cbuild && cmake -DCMAKE_CXX_FLAGS="-DDONT_USE_LIBLAPACK -UHAVE_LIBLAPACK" .. && make
 
   mac-jnidll-gradle:
     runs-on: macos-latest
