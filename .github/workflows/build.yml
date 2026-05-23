@@ -110,7 +110,7 @@ jobs:
     - uses: actions/checkout@v1
     - name: prerequisites
       # run: brew install coreutils cmake
-      run: brew install gmp mpfr readline coreutils cmake
+      run: brew install gmp mpfr readline coreutils cmake f2c
     - name: build
       run: |
         sed -i '' -e s/'${GMP_STATIC}'/gmp/g -e s/'${MPFR_STATIC}'/mpfr/g CMakeLists.txt
